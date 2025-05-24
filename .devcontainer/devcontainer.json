@@ -1,0 +1,31 @@
+{
+  "name": "AWS Archi Dev",
+  "image": "haonde/aws-archi:latest",
+  "remoteUser": "devuser",
+  "mounts": [
+    "source=${localEnv:USERPROFILE}\\.aws,target=/home/devuser/.aws,type=bind,consistency=cached",
+    "source=${localEnv:USERPROFILE}\\.ssh,target=/home/devuser/.ssh,type=bind,consistency=cached"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "hashicorp.terraform",
+        "github.vscode-pull-request-github",
+        "amazonwebservices.aws-toolkit-vscode",
+        "amazonwebservices.amazon-q-vscode",
+        "kddejong.vscode-cfn-lint",
+        "github.vscode-github-actions",
+        "redhat.vscode-yaml",
+        "dbaeumer.vscode-eslint"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh",
+          "extensions.gallery": {
+          "serviceUrl": "https://open-vsx.org/vscode/gallery",
+          "itemUrl": "https://open-vsx.org/vscode/item"
+        }
+      }
+    }
+  }
+}
