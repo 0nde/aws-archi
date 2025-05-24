@@ -125,7 +125,7 @@ RUN curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/in
     && git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions \
     && git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting \
     # Activate plugins in .zshrc - assumes default plugins=(git)
-    && sed -i 's/^plugins=(git)$/plugins=(git zsh-autosuggestions zsh-syntax-highlighting)/' /home/${USERNAME}/.zshrc
+    && sed -i 's/^plugins=(git)$/plugins=(git zsh-autosuggestions zsh-syntax-highlighting aws terraform node python zsh-completions pip npm yarn)/' /home/${USERNAME}/.zshrc
 
 # Switch back to root to set default shell for devuser and ensure zsh is in /etc/shells
 USER root
