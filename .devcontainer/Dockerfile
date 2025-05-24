@@ -1,6 +1,6 @@
 # Dockerfile for the Universal Dev Environment
-# Base image: Python 3.11 on Debian Bullseye Slim
-FROM python:3-slim-bookworm
+# Base image: Python 3.13 on Debian Bullseye Slim
+FROM python:3.13-slim-bookworm
 
 # Arguments for user creation, can be overridden in devcontainer.json
 ARG USERNAME=devuser
@@ -125,7 +125,7 @@ RUN curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/in
     && git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions \
     && git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting \
     # Activate plugins in .zshrc - assumes default plugins=(git)
-    && sed -i 's/^plugins=(git)$/plugins=(git zsh-autosuggestions zsh-syntax-highlighting gh aws terraform node python zsh-completions pip npm yarn)/' /home/${USERNAME}/.zshrc
+    && sed -i 's/^plugins=(git)$/plugins=(git zsh-autosuggestions zsh-syntax-highlighting python pyenv gh aws terraform node pip npm yarn)/' /home/${USERNAME}/.zshrc
 
 # Switch back to root to set default shell for devuser and ensure zsh is in /etc/shells
 USER root
