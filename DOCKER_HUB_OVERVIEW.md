@@ -2,7 +2,7 @@
 
 Launch a modern multi-architecture AWS development container in seconds.
 
-Built on **Debian 13 Trixie** with **Python 3.14**, this image provides a consistent environment for AWS architecture, Infrastructure as Code, cloud security and DevOps workflows.
+Built on Debian with Python, this image provides a consistent environment for AWS architecture, Infrastructure as Code, cloud security and DevOps workflows.
 
 ## Supported architectures
 
@@ -17,17 +17,17 @@ Docker automatically selects the appropriate image for the host architecture.
 
 ### AWS and CloudFormation
 
-- AWS CLI v2
+- AWS CLI
 - AWS CDK
 - cdk-nag
 - cfn-lint
 
 ### Infrastructure as Code
 
-- Terraform 1.15.8
-- Terragrunt 1.1.0
-- TFLint 0.63.1
-- terraform-docs 0.24.0
+- Terraform
+- Terragrunt
+- TFLint
+- terraform-docs
 
 ### Security and compliance
 
@@ -71,7 +71,7 @@ Basic configuration:
 
     {
       "name": "AWS Architecture Development",
-      "image": "haonde/aws-archi:1.0.1",
+      "image": "haonde/aws-archi:latest",
       "remoteUser": "devuser",
       "init": true
     }
@@ -85,11 +85,8 @@ Use SSH agent forwarding instead of mounting private SSH keys inside the contain
 | Tag | Description | Status |
 | --- | --- | --- |
 | `latest` | Current multi-architecture image published automatically | Recommended for receiving updates |
-| `1.0.1` | Security-hardened multi-architecture release | Recommended stable release |
-| `v1.0.1` | Git release alias for `1.0.1` | Available |
-| `sha-dc72842` | Image produced from the hardening source revision | Recommended for revision-based builds |
-
-The old `0.5` tag has been removed. The pre-hardening tags `1.0.0` and `sha-02c0b5c` are still visible on Docker Hub, but they are legacy builds and are not recommended for new environments.
+| `X.Y.Z` / `vX.Y.Z` | Images associated with published releases | Recommended for stable environments |
+| `sha-*` | Images associated with specific source revisions | Recommended for revision-based builds |
 
 Tags can technically be moved. For strict immutability, use an image digest.
 
