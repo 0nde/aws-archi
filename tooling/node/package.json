@@ -1,0 +1,8 @@
+{
+  "name": "aws-archi-node-tools",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "aws-cdk": "2.1130.0"
+  }
+}

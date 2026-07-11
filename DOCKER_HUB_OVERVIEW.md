@@ -19,7 +19,6 @@ Docker automatically selects the appropriate image for the host architecture.
 
 - AWS CLI
 - AWS CDK
-- cdk-nag
 - cfn-lint
 
 ### Infrastructure as Code
@@ -32,7 +31,6 @@ Docker automatically selects the appropriate image for the host architecture.
 ### Security and compliance
 
 - ShellCheck
-- cdk-nag
 - cfn-lint
 
 ### Development environment
@@ -78,14 +76,14 @@ Basic configuration:
 
 For strict reproducibility, use a specific `sha-*` tag or, preferably, an immutable image digest.
 
-Use SSH agent forwarding instead of mounting private SSH keys inside the container. If AWS configuration is required, mount it read-only.
+Use SSH agent forwarding instead of mounting private SSH keys inside the container. Keep AWS credentials in a dedicated Docker volume or another explicitly configured credential provider rather than automatically exposing the host AWS directory.
 
 ## Tags
 
 | Tag | Description | Status |
 | --- | --- | --- |
 | `latest` | Current multi-architecture image published automatically | Recommended for receiving updates |
-| `X.Y.Z` / `vX.Y.Z` | Images associated with published releases | Recommended for stable environments |
+| `X.Y.Z` | Images associated with published releases | Recommended for stable environments |
 | `sha-*` | Images associated with specific source revisions | Recommended for revision-based builds |
 
 Tags can technically be moved. For strict immutability, use an image digest.
@@ -98,9 +96,12 @@ Published images include:
 
 - BuildKit SBOM attestations
 - BuildKit provenance attestations
+- Keyless Cosign signatures backed by GitHub OIDC
 - SHA-256 verification of upstream release archives when available
 - Weekly automated rebuilds
 - Non-root execution by default
-- A pull-request CI gate that rejects images containing fixable critical vulnerabilities
+- A pre-publication gate that rejects images containing fixable critical vulnerabilities
 
 Tool versions are maintained in the image build configuration and updated through the automated release pipeline.
+
+Source authored for this repository is licensed under Apache-2.0. Bundled third-party components remain under their respective licenses; notices are installed in `/usr/share/licenses/aws-archi/` inside the image.
