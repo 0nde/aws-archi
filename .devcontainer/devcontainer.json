@@ -4,8 +4,9 @@
   "remoteUser": "devuser",
   "init": true,
   "mounts": [
-    "source=${localEnv:USERPROFILE}\\.aws,target=/home/devuser/.aws,type=bind,readonly"
+    "source=aws-archi-aws-config,target=/home/devuser/.aws,type=volume"
   ],
+  "postCreateCommand": "sudo chown -R devuser:devuser /home/devuser/.aws",
   "customizations": {
     "vscode": {
       "extensions": [
