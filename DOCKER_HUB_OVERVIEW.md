@@ -24,10 +24,10 @@ Docker automatically selects the appropriate image for the host architecture.
 
 ### Infrastructure as Code
 
-- Terraform
-- Terragrunt
-- TFLint
-- terraform-docs
+- Terraform 1.15.8
+- Terragrunt 1.1.0
+- TFLint 0.63.1
+- terraform-docs 0.24.0
 
 ### Security and compliance
 
@@ -71,12 +71,12 @@ Basic configuration:
 
     {
       "name": "AWS Architecture Development",
-      "image": "haonde/aws-archi:latest",
+      "image": "haonde/aws-archi:1.0.1",
       "remoteUser": "devuser",
       "init": true
     }
 
-For reproducible environments, replace `latest` with a specific `sha-*` tag or an immutable image digest.
+For strict reproducibility, use a specific `sha-*` tag or, preferably, an immutable image digest.
 
 Use SSH agent forwarding instead of mounting private SSH keys inside the container. If AWS configuration is required, mount it read-only.
 
@@ -85,10 +85,11 @@ Use SSH agent forwarding instead of mounting private SSH keys inside the contain
 | Tag | Description | Status |
 | --- | --- | --- |
 | `latest` | Current multi-architecture image published automatically | Recommended for receiving updates |
-| `sha-*` | Image produced from a specific source revision | Recommended for revision-based builds |
 | `1.0.1` | Security-hardened multi-architecture release | Recommended stable release |
-| `1.0.0` | First multi-architecture release | Available |
-| `0.5` | Legacy Debian 12 image | Not recommended |
+| `v1.0.1` | Git release alias for `1.0.1` | Available |
+| `sha-dc72842` | Image produced from the hardening source revision | Recommended for revision-based builds |
+
+The old `0.5` tag has been removed. The pre-hardening tags `1.0.0` and `sha-02c0b5c` are still visible on Docker Hub, but they are legacy builds and are not recommended for new environments.
 
 Tags can technically be moved. For strict immutability, use an image digest.
 
@@ -103,6 +104,6 @@ Published images include:
 - SHA-256 verification of upstream release archives when available
 - Weekly automated rebuilds
 - Non-root execution by default
-- A CI gate that blocks releases containing fixable critical vulnerabilities
+- A pull-request CI gate that rejects images containing fixable critical vulnerabilities
 
 Tool versions are maintained in the image build configuration and updated through the automated release pipeline.
