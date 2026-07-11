@@ -15,6 +15,9 @@ ARG AWS_CDK_VERSION=2.1130.0
 ARG CDK_NAG_VERSION=3.0.1
 ARG CFN_LINT_VERSION=1.53.0
 ARG CFN_NAG_VERSION=0.8.10
+ARG OH_MY_ZSH_COMMIT=677a4592b18c08ddea737f8aca70bac0e9fc9313
+ARG ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
+ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=1d85c692615a25fe2293bdd44b34c217d5d2bf04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PATH="/home/${USERNAME}/.local/bin:${PATH}" \
@@ -64,10 +67,11 @@ USER ${USERNAME}
 WORKDIR /home/${USERNAME}
 
 RUN set -eux; \
-    git clone --depth 1 https://github.com/ohmyzsh/ohmyzsh.git .oh-my-zsh; \
+    clone_at() { repo="$1" destination="$2" commit="$3"; git init "$destination"; git -C "$destination" remote add origin "$repo"; git -C "$destination" fetch --depth 1 origin "$commit"; git -C "$destination" checkout --detach FETCH_HEAD; rm -rf "$destination/.git"; }; \
+    clone_at https://github.com/ohmyzsh/ohmyzsh.git .oh-my-zsh "${OH_MY_ZSH_COMMIT}"; \
     cp .oh-my-zsh/templates/zshrc.zsh-template .zshrc; \
-    git clone --depth 1 https://github.com/zsh-users/zsh-autosuggestions .oh-my-zsh/custom/plugins/zsh-autosuggestions; \
-    git clone --depth 1 https://github.com/zsh-users/zsh-syntax-highlighting.git .oh-my-zsh/custom/plugins/zsh-syntax-highlighting; \
+    clone_at https://github.com/zsh-users/zsh-autosuggestions.git .oh-my-zsh/custom/plugins/zsh-autosuggestions "${ZSH_AUTOSUGGESTIONS_COMMIT}"; \
+    clone_at https://github.com/zsh-users/zsh-syntax-highlighting.git .oh-my-zsh/custom/plugins/zsh-syntax-highlighting "${ZSH_SYNTAX_HIGHLIGHTING_COMMIT}"; \
     sed -i 's/^plugins=(git)$/plugins=(git aws terraform node npm python pip gh zsh-autosuggestions zsh-syntax-highlighting)/' .zshrc
 
 CMD ["sleep", "infinity"]
