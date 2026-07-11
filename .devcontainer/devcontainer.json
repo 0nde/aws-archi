@@ -1,9 +1,6 @@
 {
   "name": "AWS Architecture Dev",
-  "build": {
-    "dockerfile": "Dockerfile",
-    "context": ".."
-  },
+  "image": "haonde/aws-archi@sha256:ab6d5523e7f498df93badbb1d800ba0cecab1a9dd5582d5ef22e01ab5a5fedaf",
   "remoteUser": "devuser",
   "init": true,
   "mounts": [
