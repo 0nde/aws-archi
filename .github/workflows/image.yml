@@ -46,7 +46,7 @@ jobs:
             ${{ env.IMAGE_DOCKERHUB }}
             ${{ env.IMAGE_GHCR }}
           tags: |
-            type=ref,event=tag
+            type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha
       - id: build

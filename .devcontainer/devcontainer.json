@@ -1,6 +1,6 @@
 {
   "name": "AWS Architecture Dev",
-  "image": "haonde/aws-archi@sha256:ab6d5523e7f498df93badbb1d800ba0cecab1a9dd5582d5ef22e01ab5a5fedaf",
+  "image": "haonde/aws-archi@sha256:3ebd9620d57dcebd54f16f3ef8e8daaef0a3d14ed6dd4319c56697acca5333a8",
   "remoteUser": "devuser",
   "init": true,
   "mounts": [
