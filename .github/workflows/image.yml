@@ -41,13 +41,14 @@ jobs:
       - name: Verify tools and runtime defaults
         run: docker run --rm -v "$PWD/scripts:/tests:ro" aws-archi:test bash /tests/verify-tools.sh
       - name: Block fixable critical vulnerabilities
-        uses: docker/scout-action@2688993af7bafd6ba8c6a74ec652442be91dd82b # v1.23.1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          command: cves
-          image: local://aws-archi:test
-          only-severities: critical
-          only-fixed: true
-          exit-code: true
+          scan-type: image
+          image-ref: aws-archi:test
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
 
   publish:
     name: Publish multi-architecture image
