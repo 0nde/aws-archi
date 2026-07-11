@@ -1,139 +1,73 @@
-# Dockerfile for the Universal Dev Environment
-# Base image: Python 3.13 on Debian Bullseye Slim
-FROM python:3.13-slim-bookworm
+# syntax=docker/dockerfile:1.18
+FROM python:3.14-slim-trixie
 
-# Arguments for user creation, can be overridden in devcontainer.json
+ARG TARGETARCH
 ARG USERNAME=devuser
 ARG USER_UID=1000
-ARG USER_GID=${USER_UID}
+ARG USER_GID=1000
+ARG TERRAFORM_VERSION=1.15.8
+ARG TERRAGRUNT_VERSION=1.1.0
+ARG TFLINT_VERSION=0.63.1
+ARG TERRAFORM_DOCS_VERSION=0.24.0
+ARG TRIVY_VERSION=0.72.0
+ARG SENTINEL_VERSION=0.41.0
+ARG AWS_CDK_VERSION=2.1130.0
+ARG CDK_NAG_VERSION=3.0.1
+ARG CFN_LINT_VERSION=1.53.0
+ARG CFN_NAG_VERSION=0.8.10
 
-# Versions for Terraform tools - can be overridden in devcontainer.json build args
-ARG TERRAFORM_VERSION="1.12.1" # Specify a recent default version
-ARG TFLINT_VERSION="v0.57.0"    # Check GitHub for latest TFLint release
-ARG TERRAGRUNT_VERSION="v0.80.2" # Check GitHub for latest Terragrunt release
-ARG TFSEC_VERSION="v1.28.14"     # Check GitHub for latest TFsec release
-ARG TERRAFORM_DOCS_VERSION="v0.20.0" # Check GitHub for latest terraform-docs release
-ARG SENTINEL_VERSION="0.40.0" # Check GitHub for latest Sentinel CLI release
-
-# Environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
     PATH="/home/${USERNAME}/.local/bin:${PATH}" \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install system dependencies, create user, and set up sudo
-# Using --mount=type=cache for apt lists
-RUN --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
-    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
-    sudo \
-    git \
-    curl \
-    gnupg \
-    lsb-release \
-    software-properties-common \
-    ca-certificates \
-    unzip \
-    procps \
-    zsh \
-    ruby \
-    ruby-dev \
-    # For Node.js native modules & other builds
-    build-essential \
-    # Create the non-root user with sudo access
-    && groupadd --gid ${USER_GID} ${USERNAME} \
-    && useradd --uid ${USER_UID} --gid ${USER_GID} -m ${USERNAME} --shell /bin/bash \
-    && echo ${USERNAME} ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/${USERNAME} \
-    && chmod 0440 /etc/sudoers.d/${USERNAME} \
-    # Clean up apt cache (already cached by buildkit, but good practice)
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+      bash-completion build-essential ca-certificates curl gh git gnupg jq less \
+      nodejs npm openssh-client procps ruby ruby-dev shellcheck sudo unzip zsh \
+    && groupadd --gid "${USER_GID}" "${USERNAME}" \
+    && useradd --uid "${USER_UID}" --gid "${USER_GID}" --create-home --shell /usr/bin/zsh "${USERNAME}" \
+    && printf '%s ALL=(root) NOPASSWD:ALL\n' "${USERNAME}" > "/etc/sudoers.d/${USERNAME}" \
+    && chmod 0440 "/etc/sudoers.d/${USERNAME}"
 
-# --- Tool Installation (as root) ---
+# Install release archives for the active BuildKit architecture. Every project
+# providing SHA256SUMS is verified before its archive is extracted.
+RUN set -eux; \
+    case "${TARGETARCH}" in amd64) arch=amd64; trivy_arch=64bit ;; arm64) arch=arm64; trivy_arch=ARM64 ;; *) echo "Unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; esac; \
+    install_zip() { url="$1" sums="$2" binary="$3"; file="/tmp/${url##*/}"; curl -fsSLo "$file" "$url"; curl -fsSLo /tmp/SHA256SUMS "$sums"; (cd /tmp && grep "  ${file##*/}$" SHA256SUMS | sha256sum -c -); unzip -q "$file" -d /tmp/tool; install -m 0755 "/tmp/tool/${binary}" "/usr/local/bin/${binary}"; rm -rf /tmp/tool "$file" /tmp/SHA256SUMS; }; \
+    install_tar() { url="$1" sums="$2" binary="$3"; file="/tmp/${url##*/}"; curl -fsSLo "$file" "$url"; curl -fsSLo /tmp/checksums "$sums"; (cd /tmp && grep "${file##*/}$" checksums | sha256sum -c -); tar -xzf "$file" -C /tmp; install -m 0755 "/tmp/${binary}" "/usr/local/bin/${binary}"; rm -f "$file" "/tmp/${binary}" /tmp/checksums; }; \
+    install_zip "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_${arch}.zip" "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_SHA256SUMS" terraform; \
+    install_zip "https://github.com/terraform-linters/tflint/releases/download/v${TFLINT_VERSION}/tflint_linux_${arch}.zip" "https://github.com/terraform-linters/tflint/releases/download/v${TFLINT_VERSION}/checksums.txt" tflint; \
+    install_tar "https://github.com/terraform-docs/terraform-docs/releases/download/v${TERRAFORM_DOCS_VERSION}/terraform-docs-v${TERRAFORM_DOCS_VERSION}-linux-${arch}.tar.gz" "https://github.com/terraform-docs/terraform-docs/releases/download/v${TERRAFORM_DOCS_VERSION}/terraform-docs-v${TERRAFORM_DOCS_VERSION}.sha256sum" terraform-docs; \
+    install_tar "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-${trivy_arch}.tar.gz" "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_checksums.txt" trivy; \
+    tg="/tmp/terragrunt_linux_${arch}"; curl -fsSLo "$tg" "https://github.com/gruntwork-io/terragrunt/releases/download/v${TERRAGRUNT_VERSION}/terragrunt_linux_${arch}"; curl -fsSLo /tmp/SHA256SUMS "https://github.com/gruntwork-io/terragrunt/releases/download/v${TERRAGRUNT_VERSION}/SHA256SUMS"; (cd /tmp && grep "  ${tg##*/}$" SHA256SUMS | sha256sum -c -); install -m 0755 "$tg" /usr/local/bin/terragrunt; rm -f "$tg" /tmp/SHA256SUMS; \
+    install_zip "https://releases.hashicorp.com/sentinel/${SENTINEL_VERSION}/sentinel_${SENTINEL_VERSION}_linux_${arch}.zip" "https://releases.hashicorp.com/sentinel/${SENTINEL_VERSION}/sentinel_${SENTINEL_VERSION}_SHA256SUMS" sentinel
 
-# Install Node.js (LTS) and Yarn
-RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && npm install -g yarn aws-cdk cdk-nag \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+# AWS CLI publishes architecture-specific signed bundles. HTTPS transport plus
+# AWS's own installer is used here; the remaining standalone tools are checksummed above.
+RUN set -eux; \
+    case "${TARGETARCH}" in amd64) aws_arch=x86_64 ;; arm64) aws_arch=aarch64 ;; esac; \
+    curl -fsSLo /tmp/awscliv2.zip "https://awscli.amazonaws.com/awscli-exe-linux-${aws_arch}.zip"; \
+    unzip -q /tmp/awscliv2.zip -d /tmp; /tmp/aws/install; rm -rf /tmp/aws /tmp/awscliv2.zip
 
-# Install AWS CLI v2
-RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" \
-    && unzip awscliv2.zip \
-    && ./aws/install \
-    && rm -rf awscliv2.zip aws
-
-# Install GitHub CLI
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-    && apt-get update && apt-get install -y gh \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Install Terraform (specific version)
-RUN curl -Ls "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -o /tmp/terraform.zip \
-    && unzip /tmp/terraform.zip -d /usr/local/bin \
-    && chmod +x /usr/local/bin/terraform \
-    && rm /tmp/terraform.zip
-
-# Install TFLint (specific version)
-RUN curl -Ls "https://github.com/terraform-linters/tflint/releases/download/${TFLINT_VERSION}/tflint_linux_amd64.zip" -o /tmp/tflint.zip \
-    && unzip /tmp/tflint.zip -d /usr/local/bin \
-    && chmod +x /usr/local/bin/tflint \
-    && rm /tmp/tflint.zip
-
-# Install Terragrunt (specific version)
-RUN curl -Ls "https://github.com/gruntwork-io/terragrunt/releases/download/${TERRAGRUNT_VERSION}/terragrunt_linux_amd64" -o /usr/local/bin/terragrunt \
-    && chmod +x /usr/local/bin/terragrunt
-
-# Install TFsec (specific version)
-RUN curl -Ls "https://github.com/aquasecurity/tfsec/releases/download/${TFSEC_VERSION}/tfsec-linux-amd64" -o /usr/local/bin/tfsec \
-    && chmod +x /usr/local/bin/tfsec
-
-# Install Terraform-docs (specific version)
-RUN curl -Ls "https://github.com/terraform-docs/terraform-docs/releases/download/${TERRAFORM_DOCS_VERSION}/terraform-docs-${TERRAFORM_DOCS_VERSION}-linux-amd64.tar.gz" -o /tmp/terraform-docs.tar.gz \
-    && tar -xzf /tmp/terraform-docs.tar.gz -C /usr/local/bin terraform-docs \
-    && chmod +x /usr/local/bin/terraform-docs \
-    && rm /tmp/terraform-docs.tar.gz
-
-# Install Sentinel CLI (specific version)
-RUN curl -Ls "https://releases.hashicorp.com/sentinel/${SENTINEL_VERSION}/sentinel_${SENTINEL_VERSION}_linux_amd64.zip" -o /tmp/sentinel.zip \
-    && unzip /tmp/sentinel.zip -d /usr/local/bin \
-    && chmod +x /usr/local/bin/sentinel \
-    && rm /tmp/sentinel.zip
-
-# Install Python tools (e.g., pylint) using pip
-# Using --mount=type=cache for pip cache
 RUN --mount=type=cache,target=/root/.cache/pip \
-    python3 -m pip install --no-cache-dir --upgrade pip \
-    && python3 -m pip install --no-cache-dir pylint cfn-lint
+    python -m pip install --no-cache-dir "cfn-lint==${CFN_LINT_VERSION}" pylint \
+    && npm install --global "aws-cdk@${AWS_CDK_VERSION}" "cdk-nag@${CDK_NAG_VERSION}" \
+    && gem install cfn-nag --version "${CFN_NAG_VERSION}" --no-document \
+    && npm cache clean --force \
+    && rm -rf /root/.gem /tmp/*
 
-# Install cfn-nag using gem
-RUN gem install cfn-nag
-
-# --- Switch to non-root user ---
 USER ${USERNAME}
 WORKDIR /home/${USERNAME}
 
-# Install Oh My Zsh for the devuser and common plugins
-# This section needs to run as the USERNAME, so we ensure USER ${USERNAME} is active.
-# If any prior step switched to root, this would implicitly switch back if USER ${USERNAME} was the last USER command.
-# However, for clarity and safety, explicitly setting USER ${USERNAME} before user-specific setup is good practice.
-# Since USER ${USERNAME} is already set just before WORKDIR, we can proceed.
-RUN curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh -o install_omz.sh \
-    && sh install_omz.sh --unattended \
-    && rm install_omz.sh \
-    # Install zsh plugins: zsh-autosuggestions and zsh-syntax-highlighting
-    && git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions \
-    && git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting \
-    # Activate plugins in .zshrc - assumes default plugins=(git)
-    && sed -i 's/^plugins=(git)$/plugins=(git zsh-autosuggestions zsh-syntax-highlighting python pyenv gh aws terraform node pip npm yarn)/' /home/${USERNAME}/.zshrc
+RUN set -eux; \
+    git clone --depth 1 https://github.com/ohmyzsh/ohmyzsh.git .oh-my-zsh; \
+    cp .oh-my-zsh/templates/zshrc.zsh-template .zshrc; \
+    git clone --depth 1 https://github.com/zsh-users/zsh-autosuggestions .oh-my-zsh/custom/plugins/zsh-autosuggestions; \
+    git clone --depth 1 https://github.com/zsh-users/zsh-syntax-highlighting.git .oh-my-zsh/custom/plugins/zsh-syntax-highlighting; \
+    sed -i 's/^plugins=(git)$/plugins=(git aws terraform node npm python pip gh zsh-autosuggestions zsh-syntax-highlighting)/' .zshrc
 
-# Switch back to root to set default shell for devuser and ensure zsh is in /etc/shells
-USER root
-RUN if ! grep -q "$(which zsh)" /etc/shells; then echo "$(which zsh)" >> /etc/shells; fi \
-    && chsh --shell $(which zsh) ${USERNAME}
-
-# Switch back to non-root user for the remainder of the build and runtime
-USER ${USERNAME}
-
-# Default command to keep container running for IDEs
 CMD ["sleep", "infinity"]
