@@ -5,10 +5,9 @@ Dev Container multi-architecture (`linux/amd64` and `linux/arm64`) for AWS, Terr
 ## Included tools
 
 - Python 3.14 on Debian 13 (Trixie)
-- Terraform, Terragrunt, TFLint, terraform-docs and Sentinel
+- Terraform, Terragrunt, TFLint and terraform-docs
 - AWS CLI v2, AWS CDK and cdk-nag
-- Trivy (`trivy config` replaces the legacy tfsec workflow)
-- cfn-lint, cfn-nag, GitHub CLI, ShellCheck, Node.js and zsh
+- cfn-lint, GitHub CLI, ShellCheck, Node.js and zsh
 
 The version pins live at the top of `.devcontainer/Dockerfile`. Release archives are checked against upstream SHA-256 manifests when those manifests are published.
 

@@ -73,3 +73,12 @@ jobs:
       - name: Verify tools
         if: github.event_name == 'pull_request'
         run: docker run --rm -v "$PWD/scripts:/tests:ro" aws-archi:test bash /tests/verify-tools.sh
+      - name: Block fixable critical vulnerabilities
+        if: github.event_name == 'pull_request'
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: local://aws-archi:test
+          only-severities: critical
+          only-fixed: true
+          exit-code: true
