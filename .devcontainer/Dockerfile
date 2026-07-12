@@ -11,7 +11,7 @@ RUN git init . \
     && git remote add origin https://github.com/terraform-docs/terraform-docs.git \
     && git fetch --depth 1 origin "${TERRAFORM_DOCS_COMMIT}" \
     && git checkout --detach FETCH_HEAD \
-    && go get golang.org/x/crypto@v0.53.0 golang.org/x/net@v0.56.0 \
+    && go get golang.org/x/crypto@v0.54.0 golang.org/x/net@v0.57.0 \
     && go mod verify \
     && CGO_ENABLED=0 go build -trimpath \
       -ldflags="-s -w -X github.com/terraform-docs/terraform-docs/internal/version.commit=${TERRAFORM_DOCS_COMMIT}" \
