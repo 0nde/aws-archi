@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest a focused improvement to the development image.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: Need
+      description: Describe the workflow or problem this would improve.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Explain the desired behavior and relevant alternatives.
+    validations:
+      required: true
+  - type: checkboxes
+    id: compatibility
+    attributes:
+      label: Compatibility
+      options:
+        - label: I considered both linux/amd64 and linux/arm64.
+          required: true
