@@ -1,5 +1,17 @@
 # AWS Architecture development image
 
+
+[![Build and publish image](https://github.com/0nde/aws-archi/actions/workflows/image.yml/badge.svg?branch=main)](https://github.com/0nde/aws-archi/actions/workflows/image.yml)
+[![Docker Pulls](https://img.shields.io/docker/pulls/haonde/aws-archi?logo=docker)](https://hub.docker.com/r/haonde/aws-archi)
+[![Docker Image Version](https://img.shields.io/docker/v/haonde/aws-archi?sort=semver&logo=docker&label=image)](https://hub.docker.com/r/haonde/aws-archi/tags)
+[![License](https://img.shields.io/github/license/0nde/aws-archi)](https://github.com/0nde/aws-archi/blob/main/LICENSE)
+[![Last Commit](https://img.shields.io/github/last-commit/0nde/aws-archi/main)](https://github.com/0nde/aws-archi/commits/main)
+
+![Platforms](https://img.shields.io/badge/platforms-linux%2Famd64%20%7C%20linux%2Farm64-blue)
+![SBOM](https://img.shields.io/badge/SBOM-BuildKit-informational)
+![Provenance](https://img.shields.io/badge/provenance-mode%3Dmax-informational)
+![Signed](https://img.shields.io/badge/signed-Cosign%20%2B%20GitHub%20OIDC-success)
+
 Dev Container multi-architecture (`linux/amd64` and `linux/arm64`) for AWS, Terraform and CDK work.
 
 ## Included tools
