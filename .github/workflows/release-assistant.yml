@@ -76,20 +76,58 @@ jobs:
             exit 0
           fi
 
-          git config user.name "aws-archi release assistant"
-          git config user.email "3944130+0nde@users.noreply.github.com"
-          git switch -c "$BRANCH"
-          git add .devcontainer/devcontainer.json .devcontainer/docker/devcontainer.json
-          git diff --cached --check
-          git commit -m "chore: pin ${TAG} devcontainer image"
+          git diff --check
           gh auth setup-git
           remote_sha=$(git ls-remote --heads origin "$BRANCH" | awk '{print $1}')
           if [ -n "$remote_sha" ]; then
             git push --force-with-lease="refs/heads/${BRANCH}:${remote_sha}" \
-              --set-upstream origin "$BRANCH"
+              origin "${GITHUB_SHA}:refs/heads/${BRANCH}"
           else
-            git push --set-upstream origin "$BRANCH"
+            git push origin "${GITHUB_SHA}:refs/heads/${BRANCH}"
           fi
+
+          mutation='mutation($input: CreateCommitOnBranchInput!) {
+            createCommitOnBranch(input: $input) { commit { oid } }
+          }'
+          payload=$(jq -n \
+            --arg query "$mutation" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg branch "refs/heads/${BRANCH}" \
+            --arg head "$GITHUB_SHA" \
+            --arg message "chore: pin ${TAG} devcontainer image" \
+            --arg primary "$(base64 -w 0 .devcontainer/devcontainer.json)" \
+            --arg docker "$(base64 -w 0 .devcontainer/docker/devcontainer.json)" \
+            '{
+              query: $query,
+              variables: {
+                input: {
+                  branch: {
+                    repositoryNameWithOwner: $repository,
+                    branchName: $branch
+                  },
+                  expectedHeadOid: $head,
+                  message: {headline: $message},
+                  fileChanges: {
+                    additions: [
+                      {path: ".devcontainer/devcontainer.json", contents: $primary},
+                      {path: ".devcontainer/docker/devcontainer.json", contents: $docker}
+                    ]
+                  }
+                }
+              }
+            }')
+          commit_sha=$(gh api graphql --input - --jq \
+            '.data.createCommitOnBranch.commit.oid' <<<"$payload")
+          [[ "$commit_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "GitHub did not create the release commit" >&2
+            exit 1
+          }
+          verified=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${commit_sha}" \
+            --jq '.commit.verification.verified')
+          [ "$verified" = "true" ] || {
+            echo "GitHub did not sign the release commit" >&2
+            exit 1
+          }
 
           cat > "$RUNNER_TEMP/release-pr.md" <<EOF
           Pins the Dev Container to the verified canonical GHCR image for **${TAG}**:
@@ -99,8 +137,15 @@ jobs:
           This pull request was prepared automatically and will not be merged automatically.
           EOF
 
-          number=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          number=$(gh pr list --head "$BRANCH" --state all --json number --jq '.[0].number // empty')
           if [ -n "$number" ]; then
+            state=$(gh pr view "$number" --json state --jq '.state')
+            if [ "$state" = "CLOSED" ]; then
+              gh pr reopen "$number"
+            elif [ "$state" != "OPEN" ]; then
+              echo "Release pull request #${number} is already merged" >&2
+              exit 1
+            fi
             gh pr edit "$number" --title "chore: pin ${TAG} devcontainer image" --body-file "$RUNNER_TEMP/release-pr.md"
           else
             gh pr create \
