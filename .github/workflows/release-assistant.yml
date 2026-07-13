@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Existing image/tag version without the v prefix (for example 1.0.3)
+        description: Existing image/tag version without the v prefix (for example 1.2.3)
         required: true
         type: string
 

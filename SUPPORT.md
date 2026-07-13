@@ -15,7 +15,7 @@ The supported interface is the set of tools and runtime defaults checked by `scr
 | `sha-*` | Traceability to a source commit | Not changed by scheduled refreshes; still mutable on a source-triggered rebuild |
 | `@sha256:...` | Reproducible deployment or development environment | Immutable OCI reference |
 
-GHCR (`ghcr.io/0nde/aws-archi`) is canonical. Docker Hub (`haonde/aws-archi`) is a public mirror. Publication verification checks that both registries expose the expected multi-architecture result, but consumers that need a single source of truth should prefer GHCR.
+GHCR (`ghcr.io/0nde/aws-archi`) is canonical and is required for every successful publication. Docker Hub (`haonde/aws-archi`) is a public mirror: normal rolling publication verifies it when available and reports a warning when it is temporarily unavailable, while a numbered release is not finalized until both registries expose the same verified digest. Consumers that need a single source of truth should prefer GHCR.
 
 Release tags are checkpoints, not maintained branches. Security and dependency fixes reach `latest` after merge; a release user must adopt a newer patch release or digest to receive them.
 

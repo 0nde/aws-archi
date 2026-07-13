@@ -28,4 +28,4 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: haonde/aws-archi
           readme-filepath: ./DOCKER_HUB_OVERVIEW.md
-          short-description: Multi-architecture AWS and Infrastructure as Code development container
+          short-description: Hardened multi-architecture AWS and IaC image with a verifiable supply chain

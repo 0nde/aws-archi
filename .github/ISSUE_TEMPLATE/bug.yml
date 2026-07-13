@@ -12,7 +12,7 @@ body:
     attributes:
       label: Image reference
       description: Provide the tag or preferably the immutable digest.
-      placeholder: haonde/aws-archi@sha256:...
+      placeholder: ghcr.io/0nde/aws-archi@sha256:...
     validations:
       required: true
   - type: dropdown

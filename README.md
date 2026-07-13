@@ -1,4 +1,4 @@
-# AWS Architecture development image
+# Hardened AWS Architecture Development Image
 
 [![Build and publish image](https://github.com/0nde/aws-archi/actions/workflows/image.yml/badge.svg?branch=main)](https://github.com/0nde/aws-archi/actions/workflows/image.yml)
 [![Docker Pulls](https://img.shields.io/docker/pulls/haonde/aws-archi?logo=docker)](https://hub.docker.com/r/haonde/aws-archi)
@@ -10,7 +10,7 @@
 ![Provenance](https://img.shields.io/badge/provenance-mode%3Dmax-informational)
 ![Signed](https://img.shields.io/badge/signed-Cosign%20%2B%20GitHub%20OIDC-success)
 
-A multi-architecture Dev Container for AWS, Terraform and CDK work. The core image deliberately stays focused; optional Docker and AWS application extensions add heavier tools only when a project needs them.
+A hardened, multi-architecture development image for AWS, Terraform and CDK, published with a verifiable supply chain: pinned project-managed inputs, SBOM and provenance attestations, and keyless Cosign signatures.
 
 ## Included tools
 
@@ -19,7 +19,7 @@ A multi-architecture Dev Container for AWS, Terraform and CDK work. The core ima
 - AWS CLI and AWS CDK
 - cfn-lint, GitHub CLI, ShellCheck, Node.js and Zsh
 
-The exact pins live in `.devcontainer/Dockerfile` and the lock files under `tooling/`. Release archives are checked against reviewed SHA-256 values where available, Python packages require hashes, and AWS CDK is installed from an npm lockfile.
+The exact project-managed pins live in `.devcontainer/Dockerfile` and the lock files under `tooling/`. Release archives are checked against reviewed SHA-256 values where available, Python packages require hashes, and AWS CDK is installed from an npm lockfile. Debian packages deliberately follow the patched Trixie repositories so regular rebuilds can apply operating-system security updates.
 
 ## Use the image
 
@@ -29,6 +29,8 @@ GHCR is the canonical registry. Docker Hub is a public mirror:
 docker pull ghcr.io/0nde/aws-archi:latest
 docker pull haonde/aws-archi:latest
 ```
+
+`latest` is the rolling channel. Use a numbered `X.Y.Z` tag for a release checkpoint and an image digest for a strictly immutable environment.
 
 Open this repository in VS Code and choose **Dev Containers: Reopen in Container**. AWS configuration is stored in the isolated Docker volume `aws-archi-aws-config`; host AWS and SSH directories are never mounted automatically. Authenticate inside the container with `aws sso login --no-browser` and use SSH agent forwarding when required.
 
@@ -41,9 +43,37 @@ docker run --rm -v "$PWD/scripts:/tests:ro" aws-archi:test bash /tests/verify-to
 
 The CI builds and tests both supported architectures on native runners. A local cross-architecture build may use emulation and is therefore slower.
 
+## Verify a release
+
+Install Docker Buildx, `jq` and Cosign, then start from the version and immutable index digest published in the GitHub release notes:
+
+```bash
+VERSION=X.Y.Z
+DIGEST=sha256:REPLACE_WITH_RELEASE_INDEX_DIGEST
+IMAGE="ghcr.io/0nde/aws-archi@${DIGEST}"
+
+cosign verify "$IMAGE" \
+  --certificate-identity "https://github.com/0nde/aws-archi/.github/workflows/image.yml@refs/tags/v${VERSION}" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+
+docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}' |
+  jq -e '[.manifests[].platform | select(.os != "unknown") | "\(.os)/\(.architecture)"] | sort == ["linux/amd64", "linux/arm64"]'
+
+for platform in linux/amd64 linux/arm64; do
+  docker buildx imagetools inspect "$IMAGE" \
+    --format "{{json (index .SBOM \"$platform\")}}" |
+    jq -e '.SPDX.spdxVersion and (.SPDX.packages | length > 0)'
+  docker buildx imagetools inspect "$IMAGE" \
+    --format "{{json (index .Provenance \"$platform\")}}" |
+    jq -e '.SLSA.buildDefinition.buildType and .SLSA.runDetails.builder.id'
+done
+```
+
+The same digest can be checked through the Docker Hub mirror by changing the repository in `IMAGE` to `haonde/aws-archi`. A successful verification proves the published signature and attestations for that digest; it does not replace vulnerability assessment for a specific use case.
+
 ## Optional Dev Container profiles
 
-The default configuration uses the lean core image. One alternative configuration is available when creating a Codespace or can be copied into a consuming repository. AWS application tooling remains documented as a project-specific extension rather than an unpinned installation:
+The repository provides one Docker-enabled profile that can be selected when creating a Codespace or copied into a consuming repository. Guidance for AWS application tooling is maintained separately so projects can apply their own reviewed installation and update policy:
 
 | Profile | Added capabilities |
 | --- | --- |
