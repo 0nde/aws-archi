@@ -1,5 +1,7 @@
 .git
 .github
+**/__pycache__/
+**/*.py[cod]
 *.md
 !THIRD_PARTY_NOTICES.md
 !SOURCE_OFFER.md

@@ -22,6 +22,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.MAINTENANCE_TOKEN }}
       BRANCH: bot/pinned-tool-updates
+      PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -39,7 +40,7 @@ jobs:
       - id: changes
         name: Detect source changes
         run: |
-          if [ -n "$(git status --porcelain)" ]; then
+          if [ -n "$(git status --porcelain -- .devcontainer/Dockerfile THIRD_PARTY_NOTICES.md third_party_licenses)" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
