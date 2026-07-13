@@ -28,7 +28,7 @@ The size of an upstream dependency update alone does not determine the project v
 5. Choose the next version and create the signed Git tag `vX.Y.Z` on the reviewed commit.
 6. Push the tag and wait for publication and post-publication verification to succeed.
 7. Confirm GHCR and Docker Hub resolve `X.Y.Z` to the expected multi-architecture image.
-8. Run the release assistant with the version without the `v` prefix. It verifies the existing tag and GHCR image, opens a normal pull request for every repository Dev Container pin, and creates a draft GitHub release.
+8. Run the release assistant with the version without the `v` prefix. It verifies the signed tag, binds both registry images to its commit, checks the supported architectures, SBOM, provenance and Cosign signatures, opens a normal pull request for every repository Dev Container pin, and creates a draft GitHub release.
 9. Review and merge the pin pull request, edit the generated release notes to include compatibility information and the immutable index digest, then publish the draft release manually.
 
 Example commands, replacing the version before use:

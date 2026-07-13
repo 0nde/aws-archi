@@ -25,6 +25,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.MAINTENANCE_TOKEN }}
       IMAGE: ghcr.io/0nde/aws-archi
+      IMAGE_DOCKERHUB: haonde/aws-archi
       VERSION: ${{ inputs.version }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -32,24 +33,23 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-      - name: Validate the existing release candidate
+      - name: Read pinned tool versions
+        id: versions
         run: |
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
-            echo "Version must be a semantic version without the v prefix" >&2
-            exit 1
-          fi
-          test -n "$GH_TOKEN" || { echo "MAINTENANCE_TOKEN is missing" >&2; exit 1; }
-
-          tag="v${VERSION}"
-          gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" >/dev/null || {
-            echo "${tag} does not exist. Create and push the reviewed final tag, wait for the image workflow, then run this assistant." >&2
-            exit 1
-          }
-
-          digest=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" --format '{{json .Manifest}}' | jq -r '.digest')
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "Published release image not found" >&2; exit 1; }
-          echo "DIGEST=$digest" >> "$GITHUB_ENV"
-          echo "TAG=$tag" >> "$GITHUB_ENV"
+          source tooling/tool-versions.conf
+          echo "cosign=${COSIGN_VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v${{ steps.versions.outputs.cosign }}
+      - name: Validate the signed release candidate
+        run: |
+          python scripts/verify_release_candidate.py \
+            --version "$VERSION" \
+            --repository "$GITHUB_REPOSITORY" \
+            --canonical-image "$IMAGE" \
+            --mirror-image "$IMAGE_DOCKERHUB" \
+            --github-env "$GITHUB_ENV"
       - name: Pin the released canonical image
         run: |
           python - <<'PY'
@@ -83,7 +83,13 @@ jobs:
           git diff --cached --check
           git commit -m "chore: pin ${TAG} devcontainer image"
           gh auth setup-git
-          git push --force --set-upstream origin "$BRANCH"
+          remote_sha=$(git ls-remote --heads origin "$BRANCH" | awk '{print $1}')
+          if [ -n "$remote_sha" ]; then
+            git push --force-with-lease="refs/heads/${BRANCH}:${remote_sha}" \
+              --set-upstream origin "$BRANCH"
+          else
+            git push --set-upstream origin "$BRANCH"
+          fi
 
           cat > "$RUNNER_TEMP/release-pr.md" <<EOF
           Pins the Dev Container to the verified canonical GHCR image for **${TAG}**:
