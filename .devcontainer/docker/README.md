@@ -8,4 +8,4 @@ The forwarded socket grants control over the host Docker daemon and must be trea
 
 Feature reference: https://github.com/devcontainers/features/tree/main/src/docker-outside-of-docker
 
-The base image is pinned by digest and is synchronized by the release assistant. The Feature uses its compatible `:1` channel and can therefore update independently; consuming projects that require a byte-for-byte reproducible editor layer should pin the Feature to a reviewed digest as well.
+The base image is pinned by digest and is synchronized by the release assistant. The configuration declares the compatible Feature channel `:1`, while `devcontainer-lock.json` resolves it to an exact reviewed version and digest for this repository. Review and update the declaration and lockfile together whenever the Feature changes.

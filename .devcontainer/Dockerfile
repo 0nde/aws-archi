@@ -111,7 +111,7 @@ ENV PATH="/home/${USERNAME}/.local/bin:${PATH}" \
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 LABEL org.opencontainers.image.title="AWS Architecture Development Environment" \
-      org.opencontainers.image.description="Multi-architecture AWS, Infrastructure as Code and DevOps development container" \
+      org.opencontainers.image.description="Hardened multi-architecture AWS and IaC development image with a verifiable supply chain" \
       org.opencontainers.image.url="https://github.com/0nde/aws-archi" \
       org.opencontainers.image.documentation="https://github.com/0nde/aws-archi#readme" \
       org.opencontainers.image.source="https://github.com/0nde/aws-archi" \

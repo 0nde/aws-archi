@@ -10,7 +10,7 @@ Maintenance and releases are intentionally separate:
 
 ## Credential setup
 
-The pinned-tool workflow uses the protected `maintenance` environment, which only permits deployments from `main`. Store a fine-grained personal access token dedicated to this repository as the `MAINTENANCE_TOKEN` environment secret, not as a general repository secret.
+The pinned-tool workflow and release assistant use the protected `maintenance` environment, which only permits deployments from `main`. Store a fine-grained personal access token dedicated to this repository as the `MAINTENANCE_TOKEN` environment secret, not as a general repository secret.
 
 Configure the token with:
 

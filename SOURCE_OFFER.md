@@ -1,6 +1,6 @@
 # Corresponding source information
 
-The complete build recipe for every published image is the repository revision recorded by its provenance attestation and `sha-*` tag. Source-authored files in this repository are available under Apache-2.0.
+The complete build recipe for every published image is the repository revision recorded by its provenance attestation. A `sha-*` tag provides a mutable source-traceability alias for source-triggered builds, but scheduled refreshes do not create or retarget that alias; use the attested revision together with the immutable image digest for exact identification. Source-authored files in this repository are available under Apache-2.0.
 
 Terraform and TFLint are compiled from the exact release commits recorded in `.devcontainer/Dockerfile`. Terraform is governed by Business Source License 1.1. TFLint is distributed under Mozilla Public License 2.0 and includes Terraform-derived code governed by Business Source License 1.1. Their upstream source is available without charge from `https://github.com/hashicorp/terraform` and `https://github.com/terraform-linters/tflint`; the exact build recipe is the Dockerfile at the image revision.
 

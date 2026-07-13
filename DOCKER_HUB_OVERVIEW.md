@@ -1,8 +1,6 @@
-# AWS Architecture Development Environment
+# Hardened AWS Architecture Development Image
 
-Launch a modern multi-architecture AWS development container in seconds.
-
-Built on Debian with Python, this image provides a consistent environment for AWS architecture, Infrastructure as Code and DevOps workflows. The core image stays intentionally focused so projects can opt into heavier application and container tooling only when needed.
+A hardened, multi-architecture development image for AWS, Terraform and CDK, published with a verifiable supply chain: pinned project-managed inputs, SBOM and provenance attestations, and keyless Cosign signatures.
 
 ## Supported architectures
 
@@ -56,6 +54,8 @@ Or pull the canonical image from GHCR:
 
     docker pull ghcr.io/0nde/aws-archi:latest
 
+`latest` is the rolling channel. Use a numbered `X.Y.Z` tag for a release checkpoint or `repository@sha256:...` for a strictly immutable environment.
+
 Start an interactive Zsh session:
 
     docker run --rm -it haonde/aws-archi:latest zsh
@@ -70,7 +70,7 @@ Check the installed tools:
 
 ## VS Code Dev Container
 
-Basic configuration:
+Rolling configuration:
 
     {
       "name": "AWS Architecture Development",
@@ -79,7 +79,9 @@ Basic configuration:
       "init": true
     }
 
-The public source repository also provides an optional Dev Container configuration for Docker workflows and project-specific guidance for adding SAM CLI and Session Manager. These additions are kept out of the core image.
+For a reproducible Dev Container, replace the rolling image with the index digest published in the selected GitHub release, using `ghcr.io/0nde/aws-archi@sha256:...`.
+
+The public source repository also provides a Docker-enabled Dev Container profile and project-specific guidance for adding SAM CLI and Session Manager with reviewed installer and update policies.
 
 Use SSH agent forwarding instead of mounting private SSH keys inside the container. Keep AWS credentials in a dedicated Docker volume or another explicitly configured credential provider rather than automatically exposing the host AWS directory.
 
@@ -109,5 +111,7 @@ Published images include:
 - a pre-publication gate that rejects fixable critical vulnerabilities
 
 Tool versions are intentionally omitted from this description. Dependency maintenance proposes reviewed source changes, while releases remain a separate maintainer decision. The public source, build workflow and support policy are available at https://github.com/0nde/aws-archi.
+
+Copyable Cosign, SBOM and provenance verification commands are maintained in the public repository README.
 
 Source authored for this repository is licensed under Apache-2.0. Bundled third-party components remain under their respective licenses; notices are installed in `/usr/share/licenses/aws-archi/` inside the image.
