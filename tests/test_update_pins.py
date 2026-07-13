@@ -59,7 +59,16 @@ class UpdatePinsTests(unittest.TestCase):
         versions = UPDATE_PINS.TOOL_VERSIONS.read_text(encoding="utf-8")
         cosign = UPDATE_PINS.env_version(versions, "COSIGN_VERSION")
         releases = {
-            "terraform-linters/tflint": (f"v{cls.dockerfile_arg('TFLINT_VERSION')}", "unused", {}),
+            "hashicorp/terraform": (
+                f"v{cls.dockerfile_arg('TERRAFORM_VERSION')}",
+                cls.dockerfile_arg("TERRAFORM_COMMIT"),
+                {},
+            ),
+            "terraform-linters/tflint": (
+                f"v{cls.dockerfile_arg('TFLINT_VERSION')}",
+                cls.dockerfile_arg("TFLINT_COMMIT"),
+                {},
+            ),
             "cli/cli": (f"v{cls.dockerfile_arg('GH_VERSION')}", "unused", {}),
             "gruntwork-io/terragrunt": (
                 f"v{cls.dockerfile_arg('TERRAGRUNT_VERSION')}",
@@ -79,10 +88,10 @@ class UpdatePinsTests(unittest.TestCase):
     @classmethod
     def current_api(cls, url: str):
         dockerfile = UPDATE_PINS.DOCKERFILE.read_text(encoding="utf-8")
-        if url == "https://api.releases.hashicorp.com/v1/releases/terraform/latest":
-            return {"version": cls.dockerfile_arg("TERRAFORM_VERSION"), "url_shasums": "unused"}
         if url == "https://registry.npmjs.org/npm/latest":
             return {"version": cls.dockerfile_arg("NPM_VERSION")}
+        if url == "https://proxy.golang.org/github.com/sigstore/rekor/@latest":
+            return {"Version": f"v{cls.dockerfile_arg('TFLINT_REKOR_VERSION')}"}
         if "golang.org%2Fx%2Fcrypto" in url or "golang.org/x/crypto" in url:
             return {"Version": UPDATE_PINS.re.search(r"go get golang.org/x/crypto@(v[^ ]+)", dockerfile).group(1)}
         if "golang.org%2Fx%2Fnet" in url or "golang.org/x/net" in url:
@@ -225,9 +234,60 @@ class UpdatePinsTests(unittest.TestCase):
         temporary, root, dockerfile, notices, licenses, tool_versions = self.isolated_repository()
         self.addCleanup(temporary.cleanup)
 
+        def github_release(repository: str):
+            if repository == "hashicorp/terraform":
+                return "v99.99.99", "f" * 40, {}
+            return self.current_release(repository)
+
+        with (
+            mock.patch.object(UPDATE_PINS, "ROOT", root),
+            mock.patch.object(UPDATE_PINS, "DOCKERFILE", dockerfile),
+            mock.patch.object(UPDATE_PINS, "NOTICES", notices),
+            mock.patch.object(UPDATE_PINS, "LICENSES", licenses),
+            mock.patch.object(UPDATE_PINS, "TOOL_VERSIONS", tool_versions),
+            mock.patch.object(UPDATE_PINS, "DOCKER_PINS", ()),
+            mock.patch.object(UPDATE_PINS, "api", side_effect=self.current_api),
+            mock.patch.object(UPDATE_PINS, "github_release", side_effect=github_release),
+            mock.patch.object(
+                UPDATE_PINS,
+                "latest_aws_cli_tag",
+                return_value=self.dockerfile_arg("AWS_CLI_VERSION"),
+            ),
+            mock.patch.object(UPDATE_PINS, "github_head", side_effect=self.current_head),
+            mock.patch.object(UPDATE_PINS, "request", return_value=b"new license"),
+        ):
+            changes = UPDATE_PINS.update()
+
+        old_terraform = self.dockerfile_arg("TERRAFORM_VERSION")
+        self.assertIn(f"Terraform {old_terraform} -> 99.99.99", changes)
+        self.assertIn("ARG TERRAFORM_VERSION=99.99.99", dockerfile.read_text(encoding="utf-8"))
+        self.assertIn(f"ARG TERRAFORM_COMMIT={'f' * 40}", dockerfile.read_text(encoding="utf-8"))
+        self.assertIn("terraform-99.99.99/LICENSE", notices.read_text(encoding="utf-8"))
+        self.assertFalse((licenses / f"terraform-{old_terraform}").exists())
+        self.assertEqual(
+            b"new license", (licenses / "terraform-99.99.99" / "LICENSE").read_bytes()
+        )
+
+    def test_source_built_go_tools_have_immutable_source_pins(self):
+        dockerfile = UPDATE_PINS.DOCKERFILE.read_text(encoding="utf-8")
+        for name in ("TERRAFORM_COMMIT", "TFLINT_COMMIT"):
+            with self.subTest(name=name):
+                self.assertRegex(UPDATE_PINS.arg(dockerfile, name), r"^[0-9a-f]{40}$")
+        self.assertNotIn("TERRAFORM_SHA256_", dockerfile)
+        self.assertNotIn("TFLINT_SHA256_", dockerfile)
+
+    def test_full_update_tracks_tflint_source_and_rekor_together(self):
+        temporary, root, dockerfile, notices, licenses, tool_versions = self.isolated_repository()
+        self.addCleanup(temporary.cleanup)
+
+        def github_release(repository: str):
+            if repository == "terraform-linters/tflint":
+                return "v99.88.77", "e" * 40, {}
+            return self.current_release(repository)
+
         def api(url: str):
-            if url == "https://api.releases.hashicorp.com/v1/releases/terraform/latest":
-                return {"version": "99.99.99", "url_shasums": "https://example.test/SHA256SUMS"}
+            if url == "https://proxy.golang.org/github.com/sigstore/rekor/@latest":
+                return {"Version": "v1.5.99"}
             return self.current_api(url)
 
         with (
@@ -238,26 +298,24 @@ class UpdatePinsTests(unittest.TestCase):
             mock.patch.object(UPDATE_PINS, "TOOL_VERSIONS", tool_versions),
             mock.patch.object(UPDATE_PINS, "DOCKER_PINS", ()),
             mock.patch.object(UPDATE_PINS, "api", side_effect=api),
-            mock.patch.object(UPDATE_PINS, "github_release", side_effect=self.current_release),
+            mock.patch.object(UPDATE_PINS, "github_release", side_effect=github_release),
             mock.patch.object(
                 UPDATE_PINS,
                 "latest_aws_cli_tag",
                 return_value=self.dockerfile_arg("AWS_CLI_VERSION"),
             ),
             mock.patch.object(UPDATE_PINS, "github_head", side_effect=self.current_head),
-            mock.patch.object(UPDATE_PINS, "checksum_file", return_value="a" * 64),
             mock.patch.object(UPDATE_PINS, "request", return_value=b"new license"),
         ):
             changes = UPDATE_PINS.update()
 
-        old_terraform = self.dockerfile_arg("TERRAFORM_VERSION")
-        self.assertIn(f"Terraform {old_terraform} -> 99.99.99", changes)
-        self.assertIn("ARG TERRAFORM_VERSION=99.99.99", dockerfile.read_text(encoding="utf-8"))
-        self.assertIn("terraform-99.99.99/LICENSE", notices.read_text(encoding="utf-8"))
-        self.assertFalse((licenses / f"terraform-{old_terraform}").exists())
-        self.assertEqual(
-            b"new license", (licenses / "terraform-99.99.99" / "LICENSE").read_bytes()
-        )
+        updated = dockerfile.read_text(encoding="utf-8")
+        self.assertIn("TFLint", " ".join(changes))
+        self.assertIn("ARG TFLINT_VERSION=99.88.77", updated)
+        self.assertIn(f"ARG TFLINT_COMMIT={'e' * 40}", updated)
+        self.assertIn("ARG TFLINT_REKOR_VERSION=1.5.99", updated)
+        self.assertIn("tflint-99.88.77/", notices.read_text(encoding="utf-8"))
+        self.assertTrue((licenses / "tflint-99.88.77" / "LICENSE").is_file())
 
     def test_commit_updates_rolls_back_files_and_licenses_on_failure(self):
         temporary, root, dockerfile, _, licenses, _ = self.isolated_repository()
