@@ -1,25 +1,20 @@
 # syntax=docker/dockerfile:1.24@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
 FROM node:24-trixie-slim@sha256:366fdef91728b1b7fa18c84fba63b6e79ed77b7e10cc206878e9705da4d7b169 AS node
 
-FROM golang:1.26-trixie@sha256:116489021a0d8ca3facf79f84ee69052cff88733547150a644d45c5eaa91dc43 AS go-tools-builder
-ARG TERRAFORM_VERSION=1.15.8
-ARG TERRAFORM_COMMIT=b9e178decf87d274d25ed36bc5a4dbc857e00420
-ARG TFLINT_VERSION=0.63.1
-ARG TFLINT_COMMIT=cd0cce4fa3decaabba3c0667c235651ac06a4221
-ARG TFLINT_REKOR_VERSION=1.5.3
-ARG TERRAFORM_DOCS_COMMIT=9d4455198941806aa02ec14369de030cda2c2b59
-ARG TERRAGRUNT_VERSION=1.1.0
-ARG TERRAGRUNT_COMMIT=aad3397a3552a9d5fab90c587e6027d31f2b6ee1
+FROM golang:1.26-trixie@sha256:116489021a0d8ca3facf79f84ee69052cff88733547150a644d45c5eaa91dc43 AS go-tools-base
 ARG GO_LICENSES_VERSION=2.0.1
 ENV GOTOOLCHAIN=local
 RUN test "$(printf '%s\n' go1.26.4 "$(go env GOVERSION)" | sort -V | head -n1)" = go1.26.4
-RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
-    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+RUN --mount=type=cache,id=go-licenses-mod,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,id=go-licenses-build,target=/root/.cache/go-build,sharing=locked \
     GOBIN=/usr/local/bin go install "github.com/google/go-licenses/v2@v${GO_LICENSES_VERSION}"
 
+FROM go-tools-base AS terraform-builder
+ARG TERRAFORM_VERSION=1.15.8
+ARG TERRAFORM_COMMIT=b9e178decf87d274d25ed36bc5a4dbc857e00420
 WORKDIR /src/terraform
-RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
-    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+RUN --mount=type=cache,id=terraform-go-mod,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,id=terraform-go-build,target=/root/.cache/go-build,sharing=locked \
     git init . \
     && git remote add origin https://github.com/hashicorp/terraform.git \
     && git fetch --depth 1 origin "${TERRAFORM_COMMIT}" \
@@ -33,9 +28,13 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     && test "$(go version -m /terraform | head -n1 | awk '{print $2}')" = "$(go env GOVERSION)" \
     && go-licenses report . --ignore github.com/hashicorp/terraform > /terraform-go-licenses.csv
 
+FROM go-tools-base AS tflint-builder
+ARG TFLINT_VERSION=0.63.1
+ARG TFLINT_COMMIT=cd0cce4fa3decaabba3c0667c235651ac06a4221
+ARG TFLINT_REKOR_VERSION=1.5.3
 WORKDIR /src/tflint
-RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
-    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+RUN --mount=type=cache,id=tflint-go-mod,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,id=tflint-go-build,target=/root/.cache/go-build,sharing=locked \
     git init . \
     && git remote add origin https://github.com/terraform-linters/tflint.git \
     && git fetch --depth 1 origin "${TFLINT_COMMIT}" \
@@ -54,9 +53,11 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     && cp /tmp/tflint.sum go.sum \
     && go-licenses report . --ignore github.com/terraform-linters/tflint > /tflint-go-licenses.csv
 
+FROM go-tools-base AS terraform-docs-builder
+ARG TERRAFORM_DOCS_COMMIT=9d4455198941806aa02ec14369de030cda2c2b59
 WORKDIR /src/terraform-docs
-RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
-    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+RUN --mount=type=cache,id=terraform-docs-go-mod,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,id=terraform-docs-go-build,target=/root/.cache/go-build,sharing=locked \
     git init . \
     && git remote add origin https://github.com/terraform-docs/terraform-docs.git \
     && git fetch --depth 1 origin "${TERRAFORM_DOCS_COMMIT}" \
@@ -68,9 +69,12 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
       -o /terraform-docs . \
     && go-licenses report . > /terraform-docs-go-licenses.csv
 
+FROM go-tools-base AS terragrunt-builder
+ARG TERRAGRUNT_VERSION=1.1.0
+ARG TERRAGRUNT_COMMIT=aad3397a3552a9d5fab90c587e6027d31f2b6ee1
 WORKDIR /src/terragrunt
-RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
-    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+RUN --mount=type=cache,id=terragrunt-go-mod,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,id=terragrunt-go-build,target=/root/.cache/go-build,sharing=locked \
     git init . \
     && git remote add origin https://github.com/gruntwork-io/terragrunt.git \
     && git fetch --depth 1 origin "${TERRAGRUNT_COMMIT}" \
@@ -113,22 +117,32 @@ LABEL org.opencontainers.image.title="AWS Architecture Development Environment" 
       org.opencontainers.image.source="https://github.com/0nde/aws-archi" \
       org.opencontainers.image.licenses="Apache-2.0"
 
+# Keep immutable build outputs before the rolling runtime refresh boundary so
+# scheduled rebuilds can reuse them while still refreshing all runtime layers.
+COPY --from=node /usr/local/ /usr/local/
+COPY --from=terraform-builder /terraform /usr/local/bin/terraform
+COPY --from=tflint-builder /tflint /usr/local/bin/tflint
+COPY --from=terraform-docs-builder /terraform-docs /usr/local/bin/terraform-docs
+COPY --from=terragrunt-builder /terragrunt /usr/local/bin/terragrunt
+COPY --from=terraform-builder /terraform-go-licenses.csv /usr/share/licenses/aws-archi/go-dependencies/
+COPY --from=tflint-builder /tflint-go-licenses.csv /usr/share/licenses/aws-archi/go-dependencies/
+COPY --from=terraform-docs-builder /terraform-docs-go-licenses.csv /usr/share/licenses/aws-archi/go-dependencies/
+COPY --from=terragrunt-builder /terragrunt-go-licenses.csv /usr/share/licenses/aws-archi/go-dependencies/
+
 # Debian package versions intentionally follow the patched Trixie repositories;
 # pinning exact revisions here would prevent the weekly security rebuild from updating them.
+ARG RUNTIME_REFRESH=stable
 # hadolint ignore=DL3008
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+    test -n "${RUNTIME_REFRESH}" \
+    && apt-get update && apt-get install -y --no-install-recommends \
       bash-completion ca-certificates curl git jq less openssh-client procps \
       shellcheck sudo unzip zsh \
     && groupadd --gid "${USER_GID}" "${USERNAME}" \
     && useradd --uid "${USER_UID}" --gid "${USER_GID}" --create-home --shell /usr/bin/zsh "${USERNAME}" \
     && printf '%s ALL=(root) NOPASSWD:ALL\n' "${USERNAME}" > "/etc/sudoers.d/${USERNAME}" \
     && chmod 0440 "/etc/sudoers.d/${USERNAME}"
-
-# Use the official Node.js distribution instead of Debian's npm dependency tree.
-COPY --from=node /usr/local/ /usr/local/
-COPY --from=go-tools-builder /terraform /tflint /terraform-docs /terragrunt /usr/local/bin/
 
 # Install the remaining prebuilt release archive for the active architecture.
 # Its upstream checksum is checked against the value maintained in this file.
@@ -160,7 +174,6 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
 
 COPY LICENSE NOTICE THIRD_PARTY_NOTICES.md SOURCE_OFFER.md /usr/share/licenses/aws-archi/
 COPY third_party_licenses/ /usr/share/licenses/aws-archi/third_party/
-COPY --from=go-tools-builder /terraform-go-licenses.csv /tflint-go-licenses.csv /terraform-docs-go-licenses.csv /terragrunt-go-licenses.csv /usr/share/licenses/aws-archi/go-dependencies/
 
 USER ${USERNAME}
 WORKDIR /home/${USERNAME}

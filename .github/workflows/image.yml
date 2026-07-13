@@ -5,6 +5,7 @@ on:
     branches: [main]
     tags: ["v*"]
     paths:
+      - ".github/workflows/image.yml"
       - ".devcontainer/Dockerfile"
       - ".dockerignore"
       - "scripts/**"
@@ -15,6 +16,8 @@ on:
       - "NOTICE"
       - "THIRD_PARTY_NOTICES.md"
       - "SOURCE_OFFER.md"
+  # Keep this trigger unfiltered: the two validation contexts are required by
+  # the main-branch ruleset and must be reported for every pull request.
   pull_request:
   schedule:
     - cron: "17 4 * * 1"
@@ -32,6 +35,7 @@ env:
 jobs:
   validate:
     name: Validate image (${{ matrix.arch }})
+    if: github.event_name == 'pull_request'
     strategy:
       fail-fast: false
       matrix:
@@ -75,11 +79,10 @@ jobs:
           exit-code: 1
 
   publish-platform:
-    name: Publish platform (${{ matrix.arch }})
+    name: Build, validate and stage platform (${{ matrix.arch }})
     if: >-
       github.event_name != 'pull_request' &&
       (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
-    needs: validate
     strategy:
       fail-fast: false
       matrix:
@@ -97,6 +100,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Test the maintenance updater
+        run: python -m unittest discover -s tests -p "test_*.py"
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - name: Log in to GHCR
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
@@ -120,7 +125,7 @@ jobs:
             org.opencontainers.image.vendor=0nde
             org.opencontainers.image.licenses=Apache-2.0
       - id: build
-        name: Build and push platform by digest
+        name: Build and stage platform by digest
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -129,12 +134,32 @@ jobs:
           outputs: type=image,"name=${{ env.IMAGE_GHCR }}",push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.platform-meta.outputs.labels }}
           cache-from: type=gha,scope=aws-archi-${{ matrix.arch }}
-          # Scheduled/manual rebuilds deliberately bypass the cache and must not
-          # export a second full cache. Normal pushes retain only final layers.
+          build-args: |
+            RUNTIME_REFRESH=${{ github.run_id }}
+          # Every publication refreshes the runtime packages without discarding
+          # immutable Go build layers. Normal pushes retain the resulting cache.
           cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=min,scope=aws-archi-{0}', matrix.arch) || '' }}
-          no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
           sbom: true
           provenance: mode=max
+      - name: Verify the exact staged platform image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          ref="${IMAGE_GHCR}@${DIGEST}"
+          docker pull --platform "$PLATFORM" "$ref"
+          docker run --rm --platform "$PLATFORM" \
+            -v "$PWD/scripts:/tests:ro" \
+            "$ref" bash /tests/verify-tools.sh
+      - name: Block fixable critical vulnerabilities in the staged image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ env.IMAGE_GHCR }}@${{ steps.build.outputs.digest }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
       - name: Export platform digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -229,7 +254,7 @@ jobs:
         run: |
           source tooling/tool-versions.conf
           echo "cosign=${COSIGN_VERSION}" >> "$GITHUB_OUTPUT"
-      - name: Read pinned tool versions
+      - name: Install Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v${{ steps.versions.outputs.cosign }}
@@ -310,7 +335,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-      - name: Install Cosign
+      - name: Read pinned tool versions
         id: versions
         shell: bash
         run: |
