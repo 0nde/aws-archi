@@ -76,7 +76,9 @@ jobs:
 
   publish-platform:
     name: Publish platform (${{ matrix.arch }})
-    if: github.event_name != 'pull_request'
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
     needs: validate
     strategy:
       fail-fast: false
@@ -96,17 +98,27 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-      - name: Log in to Docker Hub
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Log in to GHCR
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - id: platform-meta
+        name: Generate OCI metadata
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE_GHCR }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,enable=${{ github.event_name == 'push' }}
+          labels: |
+            org.opencontainers.image.title=AWS Architecture Development Environment
+            org.opencontainers.image.description=Multi-architecture AWS and Infrastructure as Code development container
+            org.opencontainers.image.documentation=https://github.com/0nde/aws-archi#readme
+            org.opencontainers.image.vendor=0nde
+            org.opencontainers.image.licenses=Apache-2.0
       - id: build
         name: Build and push platform by digest
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -114,9 +126,12 @@ jobs:
           context: .
           file: .devcontainer/Dockerfile
           platforms: ${{ matrix.platform }}
-          outputs: type=image,"name=${{ env.IMAGE_DOCKERHUB }},${{ env.IMAGE_GHCR }}",push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,"name=${{ env.IMAGE_GHCR }}",push-by-digest=true,name-canonical=true,push=true
+          labels: ${{ steps.platform-meta.outputs.labels }}
           cache-from: type=gha,scope=aws-archi-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=aws-archi-${{ matrix.arch }}
+          # Scheduled/manual rebuilds deliberately bypass the cache and must not
+          # export a second full cache. Normal pushes retain only final layers.
+          cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=min,scope=aws-archi-{0}', matrix.arch) || '' }}
           no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
           sbom: true
           provenance: mode=max
@@ -152,11 +167,6 @@ jobs:
           path: /tmp/digests
           merge-multiple: true
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-      - name: Log in to Docker Hub
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Log in to GHCR
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
@@ -172,9 +182,9 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
-            type=sha
+            type=sha,enable=${{ github.event_name == 'push' }}
       - id: manifest
-        name: Create multi-architecture manifest
+        name: Create canonical GHCR manifest
         env:
           FINAL_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
@@ -186,46 +196,171 @@ jobs:
 
           sources=()
           for digest in "${digests[@]}"; do
-            sources+=("${IMAGE_DOCKERHUB}@sha256:${digest}")
+            sources+=("${IMAGE_GHCR}@sha256:${digest}")
           done
 
           tag_args=()
-          dockerhub_ref=""
           ghcr_ref=""
           while IFS= read -r tag; do
             [ -n "$tag" ] || continue
-            tag_args+=(--tag "$tag")
             case "$tag" in
-              "${IMAGE_DOCKERHUB}:"*) [ -n "$dockerhub_ref" ] || dockerhub_ref="$tag" ;;
-              "${IMAGE_GHCR}:"*) [ -n "$ghcr_ref" ] || ghcr_ref="$tag" ;;
+              "${IMAGE_GHCR}:"*)
+                tag_args+=(--tag "$tag")
+                [ -n "$ghcr_ref" ] || ghcr_ref="$tag"
+                ;;
             esac
           done <<< "$FINAL_TAGS"
 
-          if [ -z "$dockerhub_ref" ] || [ -z "$ghcr_ref" ]; then
-            echo "Metadata did not produce tags for both registries" >&2
+          if [ -z "$ghcr_ref" ]; then
+            echo "Metadata did not produce a GHCR tag" >&2
             exit 1
           fi
 
-          docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
-          echo "dockerhub_ref=$dockerhub_ref" >> "$GITHUB_OUTPUT"
+          docker buildx imagetools create \
+            --metadata-file "$RUNNER_TEMP/manifest.json" \
+            "${tag_args[@]}" "${sources[@]}"
+          digest=$(jq -r '."containerimage.descriptor".digest' "$RUNNER_TEMP/manifest.json")
+          test "$digest" != "null"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
           echo "ghcr_ref=$ghcr_ref" >> "$GITHUB_OUTPUT"
-      - name: Install Cosign
+      - name: Read pinned tool versions
+        id: versions
+        shell: bash
+        run: |
+          source tooling/tool-versions.conf
+          echo "cosign=${COSIGN_VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Read pinned tool versions
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
-          cosign-release: v3.1.1
+          cosign-release: v${{ steps.versions.outputs.cosign }}
       - name: Sign image manifests with GitHub OIDC
         env:
-          DOCKERHUB_REF: ${{ steps.manifest.outputs.dockerhub_ref }}
-          GHCR_REF: ${{ steps.manifest.outputs.ghcr_ref }}
-        run: |
-          cosign sign --yes "$DOCKERHUB_REF"
-          cosign sign --yes "$GHCR_REF"
-      - name: Synchronize Docker Hub overview
-        if: github.ref == 'refs/heads/main'
-        uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa # v5.0.0
+          DIGEST: ${{ steps.manifest.outputs.digest }}
+        run: cosign sign --yes "${IMAGE_GHCR}@${DIGEST}"
+    outputs:
+      digest: ${{ steps.manifest.outputs.digest }}
+
+  mirror-dockerhub:
+    name: Mirror canonical image to Docker Hub
+    needs: publish-manifest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # GHCR is already published before this independent mirror is attempted.
+    # A mirror failure remains visible without rolling back the canonical image.
+    permissions:
+      contents: read
+      id-token: write
+      packages: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Log in to canonical GHCR registry
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to Docker Hub
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: haonde/aws-archi
-          readme-filepath: ./DOCKER_HUB_OVERVIEW.md
-          short-description: Multi-architecture AWS and Infrastructure as Code development container
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE_DOCKERHUB }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,enable=${{ github.event_name == 'push' }}
+      - name: Copy the canonical index and attestations
+        env:
+          DIGEST: ${{ needs.publish-manifest.outputs.digest }}
+          FINAL_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          tag_args=()
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && tag_args+=(--tag "$tag")
+          done <<< "$FINAL_TAGS"
+          test "${#tag_args[@]}" -gt 0
+          docker buildx imagetools create "${tag_args[@]}" "${IMAGE_GHCR}@${DIGEST}"
+      - name: Read pinned tool versions
+        id: versions
+        shell: bash
+        run: |
+          source tooling/tool-versions.conf
+          echo "cosign=${COSIGN_VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v${{ steps.versions.outputs.cosign }}
+      - name: Sign the Docker Hub mirror
+        env:
+          DIGEST: ${{ needs.publish-manifest.outputs.digest }}
+        run: cosign sign --yes "${IMAGE_DOCKERHUB}@${DIGEST}"
+
+  verify-publication:
+    name: Verify published image
+    if: always() && needs.publish-manifest.result == 'success'
+    needs: [publish-manifest, mirror-dockerhub]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Install Cosign
+        id: versions
+        shell: bash
+        run: |
+          source tooling/tool-versions.conf
+          echo "cosign=${COSIGN_VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v${{ steps.versions.outputs.cosign }}
+      - name: Verify canonical publication and optional mirror
+        env:
+          EXPECTED_DIGEST: ${{ needs.publish-manifest.outputs.digest }}
+          EXPECTED_REVISION: ${{ github.sha }}
+          CERTIFICATE_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/image.yml@${{ github.ref }}
+        run: |
+          verify_image() {
+            local ref="$1"
+            local manifest sbom provenance image platform actual
+
+            manifest=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}')
+            actual=$(jq -r '.digest' <<< "$manifest")
+            test "$actual" = "$EXPECTED_DIGEST"
+            jq -e '([.manifests[] | select(.platform.os == "linux") | .platform.architecture] | sort) == ["amd64", "arm64"]' <<< "$manifest" >/dev/null
+
+            for platform in linux/amd64 linux/arm64; do
+              sbom=$(docker buildx imagetools inspect "$ref" --format "{{json (index .SBOM \"$platform\")}}")
+              jq -e '.SPDX.spdxVersion and (.SPDX.packages | length > 0)' <<< "$sbom" >/dev/null
+
+              provenance=$(docker buildx imagetools inspect "$ref" --format "{{json (index .Provenance \"$platform\")}}")
+              jq -e '.SLSA.buildDefinition.buildType and .SLSA.runDetails.builder.id' <<< "$provenance" >/dev/null
+
+              image=$(docker buildx imagetools inspect "$ref" --format "{{json (index .Image \"$platform\")}}")
+              jq -e --arg revision "$EXPECTED_REVISION" \
+                '.config.Labels["org.opencontainers.image.revision"] == $revision and
+                 .config.Labels["org.opencontainers.image.source"] == "https://github.com/0nde/aws-archi" and
+                 .config.Labels["org.opencontainers.image.licenses"] == "Apache-2.0"' \
+                <<< "$image" >/dev/null
+            done
+
+            cosign verify "$ref" \
+              --certificate-identity "$CERTIFICATE_IDENTITY" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null
+          }
+
+          verify_image "${IMAGE_GHCR}@${EXPECTED_DIGEST}"
+
+          if docker buildx imagetools inspect "${IMAGE_DOCKERHUB}@${EXPECTED_DIGEST}" >/dev/null 2>&1; then
+            verify_image "${IMAGE_DOCKERHUB}@${EXPECTED_DIGEST}"
+            echo "Docker Hub and GHCR expose the same verified digest." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::GHCR is verified, but the Docker Hub mirror is unavailable. Re-run the workflow to retry the mirror."
+            echo "Docker Hub mirror unavailable; GHCR publication verified successfully." >> "$GITHUB_STEP_SUMMARY"
+          fi

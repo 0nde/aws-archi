@@ -2,7 +2,7 @@
 
 Launch a modern multi-architecture AWS development container in seconds.
 
-Built on Debian with Python, this image provides a consistent environment for AWS architecture, Infrastructure as Code, cloud security and DevOps workflows.
+Built on Debian with Python, this image provides a consistent environment for AWS architecture, Infrastructure as Code and DevOps workflows. The core image stays intentionally focused so projects can opt into heavier application and container tooling only when needed.
 
 ## Supported architectures
 
@@ -28,14 +28,15 @@ Docker automatically selects the appropriate image for the host architecture.
 - TFLint
 - terraform-docs
 
-### Security and compliance
+### Linting and quality
 
 - ShellCheck
 - cfn-lint
+- pylint
 
 ### Development environment
 
-- Python, pip and pylint
+- Python and pip
 - Node.js and npm
 - Git and GitHub CLI
 - OpenSSH client
@@ -43,13 +44,17 @@ Docker automatically selects the appropriate image for the host architecture.
 - Zsh and Oh My Zsh
 - Zsh autosuggestions and syntax highlighting
 
-The container runs as the non-root `devuser` account with passwordless sudo available for development tasks.
+The container runs as the non-root `devuser` account with passwordless sudo available for development tasks. Passwordless sudo is a convenience and is not a security boundary.
 
 ## Usage
 
-Pull the current multi-architecture image:
+Pull from Docker Hub:
 
     docker pull haonde/aws-archi:latest
+
+Or pull the canonical image from GHCR:
+
+    docker pull ghcr.io/0nde/aws-archi:latest
 
 Start an interactive Zsh session:
 
@@ -69,39 +74,40 @@ Basic configuration:
 
     {
       "name": "AWS Architecture Development",
-      "image": "haonde/aws-archi:latest",
+      "image": "ghcr.io/0nde/aws-archi:latest",
       "remoteUser": "devuser",
       "init": true
     }
 
-For strict reproducibility, use a specific `sha-*` tag or, preferably, an immutable image digest.
+The public source repository also provides an optional Dev Container configuration for Docker workflows and project-specific guidance for adding SAM CLI and Session Manager. These additions are kept out of the core image.
 
 Use SSH agent forwarding instead of mounting private SSH keys inside the container. Keep AWS credentials in a dedicated Docker volume or another explicitly configured credential provider rather than automatically exposing the host AWS directory.
 
-## Tags
+## Tags and immutability
 
-| Tag | Description | Status |
+| Reference | Meaning | Mutability |
 | --- | --- | --- |
-| `latest` | Current multi-architecture image published automatically | Recommended for receiving updates |
-| `X.Y.Z` | Images associated with published releases | Recommended for stable environments |
-| `sha-*` | Images associated with specific source revisions | Recommended for revision-based builds |
+| `latest` | Current rolling multi-architecture image | Moves after publication and maintenance rebuilds |
+| `X.Y.Z` | Published release | Intended to remain stable |
+| `sha-*` | Image built from a source commit | Not changed by scheduled refreshes; still a mutable registry alias |
+| `@sha256:...` | Exact OCI image index or manifest | Immutable |
 
-Tags can technically be moved. For strict immutability, use an image digest.
+A `sha-*` tag identifies source code, not a byte-for-byte reproducible build. Scheduled refreshes update only `latest`, but a source-triggered workflow can still rebuild the alias. Use a digest whenever strict immutability is required.
 
-## Build and security
+## Build, provenance and maintenance
 
-The image is built automatically for both supported architectures.
+The image is built automatically for both supported architectures. GHCR is the canonical registry and Docker Hub is maintained as a public mirror.
 
 Published images include:
 
 - BuildKit SBOM attestations
 - BuildKit provenance attestations
-- Keyless Cosign signatures backed by GitHub OIDC
-- SHA-256 verification of upstream release archives when available
-- Weekly automated rebuilds
-- Non-root execution by default
-- A pre-publication gate that rejects images containing fixable critical vulnerabilities
+- keyless Cosign signatures backed by GitHub OIDC
+- SHA-256 verification of upstream release archives where available
+- regular rebuilds that refresh operating-system security packages
+- non-root execution by default
+- a pre-publication gate that rejects fixable critical vulnerabilities
 
-Tool versions are maintained in the image build configuration and updated through the automated release pipeline.
+Tool versions are intentionally omitted from this description. Dependency maintenance proposes reviewed source changes, while releases remain a separate maintainer decision. The public source, build workflow and support policy are available at https://github.com/0nde/aws-archi.
 
 Source authored for this repository is licensed under Apache-2.0. Bundled third-party components remain under their respective licenses; notices are installed in `/usr/share/licenses/aws-archi/` inside the image.

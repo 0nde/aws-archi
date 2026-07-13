@@ -5,9 +5,14 @@ FROM golang:1.26-trixie@sha256:116489021a0d8ca3facf79f84ee69052cff88733547150a64
 ARG TERRAFORM_DOCS_COMMIT=9d4455198941806aa02ec14369de030cda2c2b59
 ARG TERRAGRUNT_VERSION=1.1.0
 ARG TERRAGRUNT_COMMIT=aad3397a3552a9d5fab90c587e6027d31f2b6ee1
-RUN GOBIN=/usr/local/bin go install github.com/google/go-licenses/v2@v2.0.1
+ARG GO_LICENSES_VERSION=2.0.1
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+    GOBIN=/usr/local/bin go install "github.com/google/go-licenses/v2@v${GO_LICENSES_VERSION}"
 WORKDIR /src/terraform-docs
-RUN git init . \
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+    git init . \
     && git remote add origin https://github.com/terraform-docs/terraform-docs.git \
     && git fetch --depth 1 origin "${TERRAFORM_DOCS_COMMIT}" \
     && git checkout --detach FETCH_HEAD \
@@ -19,7 +24,9 @@ RUN git init . \
     && go-licenses report . > /terraform-docs-go-licenses.csv
 
 WORKDIR /src/terragrunt
-RUN git init . \
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+    git init . \
     && git remote add origin https://github.com/gruntwork-io/terragrunt.git \
     && git fetch --depth 1 origin "${TERRAGRUNT_COMMIT}" \
     && git checkout --detach FETCH_HEAD \
@@ -60,7 +67,11 @@ ENV PATH="/home/${USERNAME}/.local/bin:${PATH}" \
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-LABEL org.opencontainers.image.source="https://github.com/0nde/aws-archi" \
+LABEL org.opencontainers.image.title="AWS Architecture Development Environment" \
+      org.opencontainers.image.description="Multi-architecture AWS, Infrastructure as Code and DevOps development container" \
+      org.opencontainers.image.url="https://github.com/0nde/aws-archi" \
+      org.opencontainers.image.documentation="https://github.com/0nde/aws-archi#readme" \
+      org.opencontainers.image.source="https://github.com/0nde/aws-archi" \
       org.opencontainers.image.licenses="Apache-2.0"
 
 # Debian package versions intentionally follow the patched Trixie repositories;
@@ -93,7 +104,7 @@ RUN set -eux; \
     install_zip "https://github.com/terraform-linters/tflint/releases/download/v${TFLINT_VERSION}/tflint_linux_${arch}.zip" "${tflint_sha}" tflint; \
     gh_archive="gh_${GH_VERSION}_linux_${arch}.tar.gz"; curl -fsSLo "/tmp/${gh_archive}" "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${gh_archive}"; echo "${gh_sha}  /tmp/${gh_archive}" | sha256sum -c -; tar -xzf "/tmp/${gh_archive}" -C /tmp; install -m 0755 "/tmp/gh_${GH_VERSION}_linux_${arch}/bin/gh" /usr/local/bin/gh; rm -rf "/tmp/${gh_archive}" "/tmp/gh_${GH_VERSION}_linux_${arch}"
 
-# AWS CLI is versioned and verified against an independently reviewed hash.
+# AWS CLI is versioned and checked against the hashes maintained by the updater.
 RUN set -eux; \
     case "${TARGETARCH}" in amd64) aws_arch=x86_64; aws_sha="${AWS_CLI_SHA256_AMD64}" ;; arm64) aws_arch=aarch64; aws_sha="${AWS_CLI_SHA256_ARM64}" ;; *) exit 1 ;; esac; \
     curl -fsSLo /tmp/awscliv2.zip "https://awscli.amazonaws.com/awscli-exe-linux-${aws_arch}-${AWS_CLI_VERSION}.zip"; \
@@ -103,13 +114,13 @@ RUN set -eux; \
 COPY tooling/python/requirements-tools.txt /tmp/requirements-tools.txt
 COPY tooling/node/package.json tooling/node/package-lock.json /opt/aws-cdk/
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    python -m pip install --no-cache-dir --require-hashes -r /tmp/requirements-tools.txt \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    --mount=type=cache,target=/root/.npm,sharing=locked \
+    python -m pip install --require-hashes -r /tmp/requirements-tools.txt \
     && npm install --global "npm@${NPM_VERSION}" \
     && npm ci --prefix /opt/aws-cdk --omit=dev --ignore-scripts \
     && ln -s /opt/aws-cdk/node_modules/.bin/cdk /usr/local/bin/cdk \
-    && npm cache clean --force \
-    && rm -rf /tmp/* /root/.npm
+    && rm -rf /tmp/*
 
 COPY LICENSE NOTICE THIRD_PARTY_NOTICES.md SOURCE_OFFER.md /usr/share/licenses/aws-archi/
 COPY third_party_licenses/ /usr/share/licenses/aws-archi/third_party/

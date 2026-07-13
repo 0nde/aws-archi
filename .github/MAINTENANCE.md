@@ -1,12 +1,16 @@
-# Semi-automated pinned tool maintenance
+# Semi-automated maintenance
 
-The `Maintain pinned tools` workflow runs every Saturday and can also be started manually. It updates the pins that Dependabot cannot safely maintain, including every Docker base and frontend digest in the multi-stage Dockerfile, paired release versions and SHA-256 values, exact source commits, Go security overrides and bundled license notices.
+Scheduled maintenance and Dependabot propose narrowly scoped pull requests for dependencies and reviewed build pins. They never push to `main`, enable auto-merge, create a release, move a release tag or silently change the Dev Container's pinned digest.
 
-The workflow only creates or refreshes the `bot/pinned-tool-updates` pull request. It never pushes to `main`, enables auto-merge, publishes a release or changes the pinned devcontainer digest.
+Maintenance and releases are intentionally separate:
 
-## One-time credential setup
+- maintenance keeps the source and rolling image current;
+- merging a maintenance PR publishes a new rolling image after validation;
+- publishing a numbered release is an explicit maintainer decision documented in `RELEASING.md`.
 
-The workflow uses the protected `maintenance` environment, which only permits deployments from `main`. Create a fine-grained personal access token dedicated to this repository and store it as the `MAINTENANCE_TOKEN` environment secret, not as a general repository secret.
+## Credential setup
+
+The pinned-tool workflow uses the protected `maintenance` environment, which only permits deployments from `main`. Store a fine-grained personal access token dedicated to this repository as the `MAINTENANCE_TOKEN` environment secret, not as a general repository secret.
 
 Configure the token with:
 
@@ -14,7 +18,7 @@ Configure the token with:
 - Contents: read and write;
 - Pull requests: read and write;
 - Metadata: read-only;
-- an explicit expiration and a calendar reminder to rotate it.
+- an explicit expiration and an external reminder to rotate it.
 
 Store the token without printing it:
 
@@ -22,20 +26,30 @@ Store the token without printing it:
 gh secret set MAINTENANCE_TOKEN --repo 0nde/aws-archi --env maintenance
 ```
 
-No Actions, Administration, Secrets, Packages or Workflows permission is required. The separate identity is necessary because GitHub intentionally suppresses workflow events caused by its built-in `GITHUB_TOKEN`; a pull request created with that token would not receive the normal pull-request validation runs.
+No Actions, Administration, Secrets, Packages or Workflows permission is required. A separate token is necessary because GitHub intentionally suppresses most workflow events caused by its built-in `GITHUB_TOKEN`; normal pull-request validation must still run on an updater-created PR.
 
-## Review policy
+Token rotation is the one intentionally manual infrastructure task. If the token expires, the maintenance workflow must fail visibly rather than bypassing branch protection.
 
-Before merging an automated update:
+## Responsibilities
 
-1. Review upstream release notes and the version/checksum pairs in the Dockerfile.
-2. Confirm that bundled third-party notices match the new versions.
-3. Wait for `Analyze (actions)`, `Validate image (amd64)` and `Validate image (arm64)`.
-4. Inspect the Trivy result inside both architecture validation jobs.
+Dependabot manages supported GitHub Actions, npm and Python dependencies. The custom updater manages build inputs that cannot be represented safely in those package ecosystems, including multi-stage Docker digests, paired release versions and checksums, source commits, selected Go dependencies, the Cosign and `go-licenses` tool pins, and bundled license notices.
+
+The updater must change only values it can validate together. New pin formats require updater tests before they are treated as automated. Runtime-generation changes—such as a new Debian release or a new Python, Go or Node.js major line—remain deliberate design decisions.
+
+## Reviewing an automated update
+
+Before merging:
+
+1. Read the generated summary and upstream release notes.
+2. Confirm that versions, checksums, source commits and license notices changed together.
+3. Wait for the Actions analysis and both native architecture image validations.
+4. Inspect the critical-vulnerability gate for each architecture.
 5. Merge manually using squash only.
 
-Dependabot continues to manage GitHub Actions, npm dependencies and Python dependencies independently. The maintenance workflow manages all Docker digests because Dependabot does not support every `FROM` instruction in a multi-stage Dockerfile.
+The repository does not require the solo maintainer to approve their own pull request. If another person receives write access, enable at least one independent approval and CODEOWNERS enforcement before relying on collaborative auto-merge.
 
-Runtime generation changes remain deliberate manual decisions. This includes moving to a new Node.js LTS line, Python or Go minor line, or Debian release. Release tags, published version numbers and the pinned devcontainer digest are also intentionally outside the maintenance workflow.
+## Rebuilds and publication
 
-Scheduled and manually dispatched image builds bypass the BuildKit layer cache so Debian security packages are refreshed. Pull requests and source pushes continue to use the cache for fast validation.
+Periodic and manually dispatched image builds refresh rolling operating-system packages even when the source commit has not changed. They update `latest` but deliberately do not retarget `sha-*` or numbered release tags. A source-triggered workflow rerun can still rebuild a `sha-*` alias, so only an image digest is an immutable reference.
+
+The publication workflow builds on native `amd64` and `arm64` runners, publishes GHCR as the canonical registry, mirrors the result to Docker Hub, and verifies the final public artifacts. Build caches are an optimization only: forced refreshes must not export redundant full caches, and cache growth should be reviewed periodically.

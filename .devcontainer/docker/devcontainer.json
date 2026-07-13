@@ -1,8 +1,15 @@
 {
-  "name": "AWS Architecture Dev",
+  "name": "AWS Architecture with Docker",
   "image": "ghcr.io/0nde/aws-archi@sha256:47d83daf119a645320d63df93cf1ec13cff89fc70784a8eb88a131f17127647b",
   "remoteUser": "devuser",
   "init": true,
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "moby": false,
+      "dockerDashComposeVersion": "v2",
+      "installDockerBuildx": true
+    }
+  },
   "mounts": [
     "source=aws-archi-aws-config,target=/home/devuser/.aws,type=volume"
   ],
@@ -11,28 +18,12 @@
     "vscode": {
       "extensions": [
         "ms-python.python",
-        "ms-python.vscode-pylance",
         "hashicorp.terraform",
-        "github.vscode-pull-request-github",
-        "github.vscode-github-actions",
         "amazonwebservices.aws-toolkit-vscode",
-        "amazonwebservices.amazon-q-vscode",
-        "kddejong.vscode-cfn-lint",
-        "redhat.vscode-yaml",
-        "dbaeumer.vscode-eslint",
-        "ms-azuretools.vscode-docker",
-        "timonwong.shellcheck"
+        "ms-azuretools.vscode-docker"
       ],
       "settings": {
         "terminal.integrated.defaultProfile.linux": "zsh",
-        "[terraform]": {
-          "editor.defaultFormatter": "hashicorp.terraform",
-          "editor.formatOnSave": true
-        },
-        "[terraform-vars]": {
-          "editor.defaultFormatter": "hashicorp.terraform",
-          "editor.formatOnSave": true
-        },
         "files.trimTrailingWhitespace": true,
         "files.insertFinalNewline": true
       }
