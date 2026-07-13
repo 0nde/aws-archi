@@ -30,6 +30,7 @@ concurrency:
 env:
   IMAGE_DOCKERHUB: haonde/aws-archi
   IMAGE_GHCR: ghcr.io/0nde/aws-archi
+  IMAGE_DESCRIPTION: "A hardened, multi-architecture development image for AWS, Terraform and CDK, published with a verifiable supply chain: pinned project-managed inputs, SBOM and provenance attestations, and keyless Cosign signatures."
   PYTHONDONTWRITEBYTECODE: "1"
 
 jobs:
@@ -120,7 +121,7 @@ jobs:
             type=sha,enable=${{ github.event_name == 'push' }}
           labels: |
             org.opencontainers.image.title=AWS Architecture Development Environment
-            org.opencontainers.image.description=Hardened multi-architecture AWS and IaC development image with a verifiable supply chain
+            org.opencontainers.image.description=${{ env.IMAGE_DESCRIPTION }}
             org.opencontainers.image.documentation=https://github.com/0nde/aws-archi#readme
             org.opencontainers.image.vendor=0nde
             org.opencontainers.image.licenses=Apache-2.0
@@ -242,6 +243,7 @@ jobs:
           fi
 
           docker buildx imagetools create \
+            --annotation "index:org.opencontainers.image.description=${IMAGE_DESCRIPTION}" \
             --metadata-file "$RUNNER_TEMP/manifest.json" \
             "${tag_args[@]}" "${sources[@]}"
           digest=$(jq -r '."containerimage.descriptor".digest' "$RUNNER_TEMP/manifest.json")
@@ -358,6 +360,9 @@ jobs:
             manifest=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}')
             actual=$(jq -r '.digest' <<< "$manifest")
             test "$actual" = "$EXPECTED_DIGEST"
+            jq -e --arg description "$IMAGE_DESCRIPTION" \
+              '.annotations["org.opencontainers.image.description"] == $description' \
+              <<< "$manifest" >/dev/null
             jq -e '([.manifests[] | select(.platform.os == "linux") | .platform.architecture] | sort) == ["amd64", "arm64"]' <<< "$manifest" >/dev/null
 
             for platform in linux/amd64 linux/arm64; do
