@@ -27,6 +27,7 @@ concurrency:
 env:
   IMAGE_DOCKERHUB: haonde/aws-archi
   IMAGE_GHCR: ghcr.io/0nde/aws-archi
+  PYTHONDONTWRITEBYTECODE: "1"
 
 jobs:
   validate:
