@@ -299,15 +299,12 @@ def update() -> list[str]:
         if change:
             changes.append(change)
 
-    terraform = api("https://api.releases.hashicorp.com/v1/releases/terraform/latest")
-    terraform_version = terraform["version"]
-    terraform_sums = terraform["url_shasums"]
-    if arg(dockerfile, "TERRAFORM_VERSION") != terraform_version:
+    terraform_tag, terraform_commit, _ = github_release("hashicorp/terraform")
+    terraform_version = terraform_tag.removeprefix("v")
+    if arg(dockerfile, "TERRAFORM_COMMIT") != terraform_commit:
         old = arg(dockerfile, "TERRAFORM_VERSION")
         dockerfile = set_arg(dockerfile, "TERRAFORM_VERSION", terraform_version)
-        for arch in ("amd64", "arm64"):
-            filename = f"terraform_{terraform_version}_linux_{arch}.zip"
-            dockerfile = set_arg(dockerfile, f"TERRAFORM_SHA256_{arch.upper()}", checksum_file(terraform_sums, filename))
+        dockerfile = set_arg(dockerfile, "TERRAFORM_COMMIT", terraform_commit)
         write_license_dir(
             staged_licenses,
             "terraform",
@@ -322,18 +319,12 @@ def update() -> list[str]:
         )
         changes.append(f"Terraform {old} -> {terraform_version}")
 
-    tflint_tag, _, tflint_assets = github_release("terraform-linters/tflint")
+    tflint_tag, tflint_commit, _ = github_release("terraform-linters/tflint")
     tflint_version = tflint_tag.removeprefix("v")
-    if arg(dockerfile, "TFLINT_VERSION") != tflint_version:
+    if arg(dockerfile, "TFLINT_COMMIT") != tflint_commit:
         old = arg(dockerfile, "TFLINT_VERSION")
-        sums = tflint_assets["checksums.txt"]
         dockerfile = set_arg(dockerfile, "TFLINT_VERSION", tflint_version)
-        for arch in ("amd64", "arm64"):
-            dockerfile = set_arg(
-                dockerfile,
-                f"TFLINT_SHA256_{arch.upper()}",
-                checksum_file(sums, f"tflint_linux_{arch}.zip"),
-            )
+        dockerfile = set_arg(dockerfile, "TFLINT_COMMIT", tflint_commit)
         write_license_dir(
             staged_licenses,
             "tflint",
@@ -457,6 +448,13 @@ def update() -> list[str]:
         old = arg(dockerfile, "GO_LICENSES_VERSION")
         dockerfile = set_arg(dockerfile, "GO_LICENSES_VERSION", go_licenses_version)
         changes.append(f"go-licenses {old} -> {go_licenses_version}")
+
+    rekor_latest = api("https://proxy.golang.org/github.com/sigstore/rekor/@latest")["Version"]
+    rekor_version = rekor_latest.removeprefix("v")
+    if arg(dockerfile, "TFLINT_REKOR_VERSION") != rekor_version:
+        old = arg(dockerfile, "TFLINT_REKOR_VERSION")
+        dockerfile = set_arg(dockerfile, "TFLINT_REKOR_VERSION", rekor_version)
+        changes.append(f"TFLint Rekor {old} -> {rekor_version}")
 
     cosign_tag, _, _ = github_release("sigstore/cosign")
     cosign_version = cosign_tag.removeprefix("v")

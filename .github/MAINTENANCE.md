@@ -32,7 +32,7 @@ Token rotation is the one intentionally manual infrastructure task. If the token
 
 ## Responsibilities
 
-Dependabot manages supported GitHub Actions, npm and Python dependencies. The custom updater manages build inputs that cannot be represented safely in those package ecosystems, including multi-stage Docker digests, paired release versions and checksums, source commits, selected Go dependencies, the Cosign and `go-licenses` tool pins, and bundled license notices.
+Dependabot manages supported GitHub Actions, npm and Python dependencies. The custom updater manages build inputs that cannot be represented safely in those package ecosystems, including multi-stage Docker digests, paired release versions, source commits and checksums, the Rekor override used by source-built TFLint, selected Go dependencies, the Cosign and `go-licenses` tool pins, and bundled license notices.
 
 The updater must change only values it can validate together. New pin formats require updater tests before they are treated as automated. Runtime-generation changes—such as a new Debian release or a new Python, Go or Node.js major line—remain deliberate design decisions.
 

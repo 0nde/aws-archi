@@ -30,6 +30,19 @@ python -m pip --version
 python -m pylint --version
 cfn-lint --version
 
+# Regression checks for CVE-2026-42504 and CVE-2026-48702. Go binaries retain
+# their toolchain and module build information even when stripped.
+for binary in /usr/local/bin/terraform /usr/local/bin/tflint; do
+  ! grep -aqE 'go1\.25\.10|go1\.26\.3' "$binary" || {
+    echo "vulnerable Go toolchain embedded in $binary" >&2
+    exit 1
+  }
+done
+! grep -aq $'github.com/sigstore/rekor\tv1.5.0' /usr/local/bin/tflint || {
+  echo "vulnerable Rekor v1.5.0 embedded in tflint" >&2
+  exit 1
+}
+
 test "$(id -un)" = "devuser"
 sudo -n true
 python -m pip check
@@ -45,6 +58,8 @@ test -f "${terraform_licenses[0]}"
 test -f /usr/share/licenses/aws-archi/LICENSE
 test -f /usr/share/licenses/aws-archi/NOTICE
 test -f /usr/share/licenses/aws-archi/THIRD_PARTY_NOTICES.md
+test -s /usr/share/licenses/aws-archi/go-dependencies/terraform-go-licenses.csv
+test -s /usr/share/licenses/aws-archi/go-dependencies/tflint-go-licenses.csv
 test -s /usr/share/licenses/aws-archi/go-dependencies/terraform-docs-go-licenses.csv
 test -s /usr/share/licenses/aws-archi/go-dependencies/terragrunt-go-licenses.csv
 
