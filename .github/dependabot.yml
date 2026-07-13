@@ -1,26 +1,5 @@
 version: 2
 updates:
-  - package-ecosystem: docker
-    directory: /.devcontainer
-    schedule:
-      interval: weekly
-    ignore:
-      # Keep the supported LTS/runtime lines; digest updates still remain enabled.
-      - dependency-name: node
-        update-types:
-          - version-update:semver-major
-      - dependency-name: python
-        update-types:
-          - version-update:semver-minor
-          - version-update:semver-major
-      - dependency-name: golang
-        update-types:
-          - version-update:semver-minor
-          - version-update:semver-major
-    labels:
-      - dependencies
-      - security
-
   - package-ecosystem: github-actions
     directory: /
     schedule:

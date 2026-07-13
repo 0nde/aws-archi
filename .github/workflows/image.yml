@@ -8,6 +8,7 @@ on:
       - ".devcontainer/Dockerfile"
       - ".dockerignore"
       - "scripts/**"
+      - "tests/**"
       - "tooling/**"
       - "third_party_licenses/**"
       - "LICENSE"
@@ -46,6 +47,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Test the maintenance updater
+        run: python -m unittest discover -s tests -p "test_*.py"
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - name: Build validation image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -57,6 +60,7 @@ jobs:
           push: false
           tags: aws-archi:test
           cache-from: type=gha,scope=aws-archi-${{ matrix.arch }}
+          no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
       - name: Verify tools and runtime defaults
         run: docker run --rm -v "$PWD/scripts:/tests:ro" aws-archi:test bash /tests/verify-tools.sh
       - name: Block fixable critical vulnerabilities
@@ -112,6 +116,7 @@ jobs:
           outputs: type=image,"name=${{ env.IMAGE_DOCKERHUB }},${{ env.IMAGE_GHCR }}",push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=aws-archi-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=aws-archi-${{ matrix.arch }}
+          no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
           sbom: true
           provenance: mode=max
       - name: Export platform digest

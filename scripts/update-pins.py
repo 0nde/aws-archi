@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import tempfile
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -24,13 +25,29 @@ DOCKERFILE = ROOT / ".devcontainer" / "Dockerfile"
 NOTICES = ROOT / "THIRD_PARTY_NOTICES.md"
 LICENSES = ROOT / "third_party_licenses"
 USER_AGENT = "aws-archi-maintenance/1.0"
+DOCKER_MANIFEST_ACCEPT = ", ".join(
+    (
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+        "application/vnd.oci.image.manifest.v1+json",
+        "application/vnd.docker.distribution.manifest.v2+json",
+    )
+)
+DOCKER_PINS = (
+    ("Dockerfile frontend", "docker/dockerfile:1.24", "docker/dockerfile"),
+    ("Node.js base image", "node:24-trixie-slim", "library/node"),
+    ("Go builder image", "golang:1.26-trixie", "library/golang"),
+    ("Python base image", "python:3.14-slim-trixie", "library/python"),
+)
 
 
 def request(url: str) -> bytes:
-    headers = {"Accept": "application/vnd.github+json", "User-Agent": USER_AGENT}
+    headers = {"User-Agent": USER_AGENT}
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    if token and url.startswith("https://api.github.com/"):
-        headers["Authorization"] = f"Bearer {token}"
+    if url.startswith("https://api.github.com/"):
+        headers["Accept"] = "application/vnd.github+json"
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
     with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=120) as response:
         return response.read()
 
@@ -52,6 +69,12 @@ def replace_one(content: str, pattern: str, replacement: str, label: str) -> str
     if count != 1:
         raise RuntimeError(f"Could not uniquely update {label}")
     return updated
+
+
+def replace_literal_once(content: str, old: str, new: str, label: str) -> str:
+    if content.count(old) != 1:
+        raise RuntimeError(f"Could not uniquely update {label}")
+    return content.replace(old, new, 1)
 
 
 def arg(content: str, name: str) -> str:
@@ -78,6 +101,44 @@ def github_head(repository: str) -> str:
     return api(f"https://api.github.com/repos/{repository}/commits/{repo['default_branch']}")["sha"]
 
 
+def docker_hub_digest(repository: str, tag: str) -> str:
+    query = urllib.parse.urlencode(
+        {"service": "registry.docker.io", "scope": f"repository:{repository}:pull"}
+    )
+    token = api(f"https://auth.docker.io/token?{query}")["token"]
+    manifest_url = f"https://registry-1.docker.io/v2/{repository}/manifests/{urllib.parse.quote(tag, safe='')}"
+    manifest_request = urllib.request.Request(
+        manifest_url,
+        headers={
+            "Accept": DOCKER_MANIFEST_ACCEPT,
+            "Authorization": f"Bearer {token}",
+            "User-Agent": USER_AGENT,
+        },
+        method="HEAD",
+    )
+    with urllib.request.urlopen(manifest_request, timeout=120) as response:
+        digest = response.headers.get("Docker-Content-Digest", "").lower()
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+        raise RuntimeError(f"Docker Hub returned an invalid digest for {repository}:{tag}")
+    return digest.removeprefix("sha256:")
+
+
+def update_docker_pin(content: str, label: str, reference: str, repository: str) -> tuple[str, str | None]:
+    pattern = (
+        rf"^(?P<prefix>(?:# syntax=|FROM ){re.escape(reference)}@sha256:)"
+        rf"(?P<digest>[0-9a-f]{{64}})(?P<suffix>(?: AS [A-Za-z0-9_.-]+)?)$"
+    )
+    matches = list(re.finditer(pattern, content, re.MULTILINE))
+    if len(matches) != 1:
+        raise RuntimeError(f"Could not uniquely locate {label}")
+    current = matches[0].group("digest")
+    latest = docker_hub_digest(repository, reference.rsplit(":", 1)[1])
+    if current == latest:
+        return content, None
+    updated = replace_one(content, pattern, rf"\g<prefix>{latest}\g<suffix>", label)
+    return updated, f"{label} {current[:12]} -> {latest[:12]}"
+
+
 def checksum_file(url: str, filename: str) -> str:
     for line in text(url).splitlines():
         fields = line.strip().split()
@@ -95,8 +156,20 @@ def version_tuple(value: str) -> tuple[int, ...]:
 
 
 def latest_aws_cli_tag() -> str:
-    tags = api("https://api.github.com/repos/aws/aws-cli/tags?per_page=100")
-    versions = [item["name"] for item in tags if item["name"].startswith("2.")]
+    versions: list[str] = []
+    page = 1
+    while True:
+        tags = api(f"https://api.github.com/repos/aws/aws-cli/tags?per_page=100&page={page}")
+        versions.extend(
+            item["name"]
+            for item in tags
+            if re.fullmatch(r"2\.\d+(?:\.\d+)+", item["name"])
+        )
+        if len(tags) < 100:
+            break
+        page += 1
+    if not versions:
+        raise RuntimeError("No AWS CLI v2 tag found")
     return max(versions, key=version_tuple)
 
 
@@ -119,6 +192,11 @@ def update() -> list[str]:
     notices = original_notices
     changes: list[str] = []
 
+    for label, reference, repository in DOCKER_PINS:
+        dockerfile, change = update_docker_pin(dockerfile, label, reference, repository)
+        if change:
+            changes.append(change)
+
     terraform = api("https://api.releases.hashicorp.com/v1/releases/terraform/latest")
     terraform_version = terraform["version"]
     terraform_sums = terraform["url_shasums"]
@@ -133,7 +211,12 @@ def update() -> list[str]:
             terraform_version,
             {"LICENSE": request(f"https://raw.githubusercontent.com/hashicorp/terraform/v{terraform_version}/LICENSE")},
         )
-        notices = notices.replace(f"terraform-{old}/LICENSE", f"terraform-{terraform_version}/LICENSE")
+        notices = replace_literal_once(
+            notices,
+            f"terraform-{old}/LICENSE",
+            f"terraform-{terraform_version}/LICENSE",
+            "Terraform notice",
+        )
         changes.append(f"Terraform {old} -> {terraform_version}")
 
     tflint_tag, _, tflint_assets = github_release("terraform-linters/tflint")
@@ -156,7 +239,12 @@ def update() -> list[str]:
                 "LICENSE-BUSL": request(f"https://raw.githubusercontent.com/terraform-linters/tflint/{tflint_tag}/terraform/LICENSE"),
             },
         )
-        notices = notices.replace(f"tflint-{old}/", f"tflint-{tflint_version}/")
+        notices = replace_literal_once(
+            notices,
+            f"tflint-{old}/",
+            f"tflint-{tflint_version}/",
+            "TFLint notice",
+        )
         changes.append(f"TFLint {old} -> {tflint_version}")
 
     gh_tag, _, gh_assets = github_release("cli/cli")
@@ -176,7 +264,12 @@ def update() -> list[str]:
             gh_version,
             {"LICENSE": request(f"https://raw.githubusercontent.com/cli/cli/{gh_tag}/LICENSE")},
         )
-        notices = notices.replace(f"github-cli-{old}/LICENSE", f"github-cli-{gh_version}/LICENSE")
+        notices = replace_literal_once(
+            notices,
+            f"github-cli-{old}/LICENSE",
+            f"github-cli-{gh_version}/LICENSE",
+            "GitHub CLI notice",
+        )
         changes.append(f"GitHub CLI {old} -> {gh_version}")
 
     terragrunt_tag, terragrunt_commit, _ = github_release("gruntwork-io/terragrunt")
@@ -190,7 +283,12 @@ def update() -> list[str]:
             terragrunt_version,
             {"LICENSE.txt": request(f"https://raw.githubusercontent.com/gruntwork-io/terragrunt/{terragrunt_tag}/LICENSE.txt")},
         )
-        notices = notices.replace(f"terragrunt-{old}/LICENSE.txt", f"terragrunt-{terragrunt_version}/LICENSE.txt")
+        notices = replace_literal_once(
+            notices,
+            f"terragrunt-{old}/LICENSE.txt",
+            f"terragrunt-{terragrunt_version}/LICENSE.txt",
+            "Terragrunt notice",
+        )
         changes.append(f"Terragrunt {old} -> {terragrunt_version}")
 
     docs_tag, docs_commit, _ = github_release("terraform-docs/terraform-docs")
@@ -203,7 +301,12 @@ def update() -> list[str]:
             new_short,
             {"LICENSE": request(f"https://raw.githubusercontent.com/terraform-docs/terraform-docs/{docs_tag}/LICENSE")},
         )
-        notices = notices.replace(f"terraform-docs-{old_short}/LICENSE", f"terraform-docs-{new_short}/LICENSE")
+        notices = replace_literal_once(
+            notices,
+            f"terraform-docs-{old_short}/LICENSE",
+            f"terraform-docs-{new_short}/LICENSE",
+            "terraform-docs notice",
+        )
         changes.append(f"terraform-docs {old_short} -> {docs_tag} ({new_short})")
 
     aws_version = latest_aws_cli_tag()
@@ -225,7 +328,12 @@ def update() -> list[str]:
                     "APACHE-2.0.txt": (next(LICENSES.glob("aws-cli-*/APACHE-2.0.txt"))).read_bytes(),
                 }
         write_license_dir("aws-cli", aws_version, license_files)
-        notices = notices.replace(f"aws-cli-{old}/", f"aws-cli-{aws_version}/")
+        notices = replace_literal_once(
+            notices,
+            f"aws-cli-{old}/",
+            f"aws-cli-{aws_version}/",
+            "AWS CLI notice",
+        )
         changes.append(f"AWS CLI {old} -> {aws_version}")
 
     npm_version = api("https://registry.npmjs.org/npm/latest")["version"]

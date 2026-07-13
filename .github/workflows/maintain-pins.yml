@@ -18,6 +18,7 @@ jobs:
     if: github.repository == '0nde/aws-archi'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    environment: maintenance
     env:
       GH_TOKEN: ${{ secrets.MAINTENANCE_TOKEN }}
       BRANCH: bot/pinned-tool-updates
@@ -28,9 +29,11 @@ jobs:
       - name: Require the dedicated maintenance identity
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo "Configure the MAINTENANCE_TOKEN repository secret as documented in .github/MAINTENANCE.md" >&2
+            echo "Configure the MAINTENANCE_TOKEN secret in the protected maintenance environment as documented in .github/MAINTENANCE.md" >&2
             exit 1
           fi
+      - name: Test the maintenance updater
+        run: python -m unittest discover -s tests -p "test_*.py"
       - name: Update manually managed pins
         run: python scripts/update-pins.py --summary "$RUNNER_TEMP/maintenance-summary.md"
       - id: changes
