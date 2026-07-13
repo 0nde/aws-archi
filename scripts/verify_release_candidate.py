@@ -18,6 +18,11 @@ DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 EXPECTED_PLATFORMS = [("linux", "amd64"), ("linux", "arm64")]
 EXPECTED_SOURCE = "https://github.com/0nde/aws-archi"
+EXPECTED_DESCRIPTION = (
+    "A hardened, multi-architecture development image for AWS, Terraform and CDK, "
+    "published with a verifiable supply chain: pinned project-managed inputs, SBOM and "
+    "provenance attestations, and keyless Cosign signatures."
+)
 
 
 class VerificationError(RuntimeError):
@@ -103,6 +108,13 @@ def validate_manifest(manifest: Any, expected_digest: str | None = None) -> str:
     )
     if expected_digest is not None:
         require(digest == expected_digest, "Registry digest does not match the canonical digest")
+
+    annotations = manifest.get("annotations")
+    require(
+        isinstance(annotations, dict)
+        and annotations.get("org.opencontainers.image.description") == EXPECTED_DESCRIPTION,
+        "OCI index description is missing or incorrect",
+    )
 
     entries = manifest.get("manifests")
     require(isinstance(entries, list), "OCI index does not contain platform manifests")

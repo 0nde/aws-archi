@@ -1,6 +1,7 @@
 import unittest
 
 from scripts.verify_release_candidate import (
+    EXPECTED_DESCRIPTION,
     VerificationError,
     resolve_tag_metadata,
     validate_attestations,
@@ -47,6 +48,9 @@ class ReleaseCandidateValidationTests(unittest.TestCase):
     def test_requires_exactly_the_two_supported_platforms(self):
         manifest = {
             "digest": DIGEST,
+            "annotations": {
+                "org.opencontainers.image.description": EXPECTED_DESCRIPTION,
+            },
             "manifests": [
                 {"platform": {"os": "linux", "architecture": "amd64"}},
                 {"platform": {"os": "linux", "architecture": "arm64"}},
@@ -70,6 +74,9 @@ class ReleaseCandidateValidationTests(unittest.TestCase):
     def test_rejects_a_registry_digest_mismatch(self):
         manifest = {
             "digest": DIGEST,
+            "annotations": {
+                "org.opencontainers.image.description": EXPECTED_DESCRIPTION,
+            },
             "manifests": [
                 {"platform": {"os": "linux", "architecture": "amd64"}},
                 {"platform": {"os": "linux", "architecture": "arm64"}},
@@ -77,6 +84,17 @@ class ReleaseCandidateValidationTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(VerificationError, "canonical digest"):
             validate_manifest(manifest, "sha256:" + "d" * 64)
+
+    def test_requires_the_multi_architecture_description(self):
+        manifest = {
+            "digest": DIGEST,
+            "manifests": [
+                {"platform": {"os": "linux", "architecture": "amd64"}},
+                {"platform": {"os": "linux", "architecture": "arm64"}},
+            ],
+        }
+        with self.assertRaisesRegex(VerificationError, "description"):
+            validate_manifest(manifest)
 
     def test_binds_image_labels_to_the_tag_commit(self):
         image = {
