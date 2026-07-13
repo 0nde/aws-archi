@@ -14,6 +14,8 @@ import os
 import re
 import shutil
 import tempfile
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -24,7 +26,9 @@ ROOT = Path(__file__).resolve().parents[1]
 DOCKERFILE = ROOT / ".devcontainer" / "Dockerfile"
 NOTICES = ROOT / "THIRD_PARTY_NOTICES.md"
 LICENSES = ROOT / "third_party_licenses"
+TOOL_VERSIONS = ROOT / "tooling" / "tool-versions.conf"
 USER_AGENT = "aws-archi-maintenance/1.0"
+REQUEST_ATTEMPTS = 4
 DOCKER_MANIFEST_ACCEPT = ", ".join(
     (
         "application/vnd.oci.image.index.v1+json",
@@ -41,6 +45,29 @@ DOCKER_PINS = (
 )
 
 
+def urlopen_with_retry(request_or_url, *, timeout: int = 120):
+    """Open an URL, retrying only transient network and server failures."""
+
+    for attempt in range(REQUEST_ATTEMPTS):
+        try:
+            return urllib.request.urlopen(request_or_url, timeout=timeout)
+        except urllib.error.HTTPError as error:
+            if error.code not in {408, 425, 429, 500, 502, 503, 504}:
+                raise
+            failure = error
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+            failure = error
+        if attempt == REQUEST_ATTEMPTS - 1:
+            raise failure
+        retry_after = (getattr(failure, "headers", None) or {}).get("Retry-After")
+        try:
+            delay = min(float(retry_after), 30.0) if retry_after else min(2**attempt, 8)
+        except ValueError:
+            delay = min(2**attempt, 8)
+        time.sleep(delay)
+    raise AssertionError("unreachable")
+
+
 def request(url: str) -> bytes:
     headers = {"User-Agent": USER_AGENT}
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
@@ -48,7 +75,7 @@ def request(url: str) -> bytes:
         headers["Accept"] = "application/vnd.github+json"
         if token:
             headers["Authorization"] = f"Bearer {token}"
-    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=120) as response:
+    with urlopen_with_retry(urllib.request.Request(url, headers=headers)) as response:
         return response.read()
 
 
@@ -88,6 +115,17 @@ def set_arg(content: str, name: str, value: str) -> str:
     return replace_one(content, rf"^ARG {re.escape(name)}=.+$", f"ARG {name}={value}", name)
 
 
+def env_version(content: str, name: str) -> str:
+    match = re.search(rf"^{re.escape(name)}=(.+)$", content, re.MULTILINE)
+    if not match:
+        raise RuntimeError(f"Missing version pin {name}")
+    return match.group(1)
+
+
+def set_env_version(content: str, name: str, value: str) -> str:
+    return replace_one(content, rf"^{re.escape(name)}=.+$", f"{name}={value}", name)
+
+
 def github_release(repository: str) -> tuple[str, str, dict[str, str]]:
     release = api(f"https://api.github.com/repos/{repository}/releases/latest")
     tag = release["tag_name"]
@@ -116,7 +154,7 @@ def docker_hub_digest(repository: str, tag: str) -> str:
         },
         method="HEAD",
     )
-    with urllib.request.urlopen(manifest_request, timeout=120) as response:
+    with urlopen_with_retry(manifest_request) as response:
         digest = response.headers.get("Docker-Content-Digest", "").lower()
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
         raise RuntimeError(f"Docker Hub returned an invalid digest for {repository}:{tag}")
@@ -173,11 +211,19 @@ def latest_aws_cli_tag() -> str:
     return max(versions, key=version_tuple)
 
 
-def write_license_dir(prefix: str, suffix: str, files: dict[str, bytes]) -> None:
-    matches = list(LICENSES.glob(f"{prefix}-*"))
+def write_license_dir(
+    licenses: Path, prefix: str, suffix: str, files: dict[str, bytes]
+) -> None:
+    # A component name can prefix another one (for example, terraform and
+    # terraform-docs), so require the suffix to look like a version or commit.
+    matches = [
+        path
+        for path in licenses.glob(f"{prefix}-*")
+        if re.match(r"(?:v?\d|[a-f][0-9a-f]{7,39}$)", path.name[len(prefix) + 1 :])
+    ]
     if len(matches) != 1:
         raise RuntimeError(f"Expected one {prefix} license directory, found {len(matches)}")
-    destination = LICENSES / f"{prefix}-{suffix}"
+    destination = licenses / f"{prefix}-{suffix}"
     if matches[0] != destination:
         shutil.rmtree(matches[0])
     destination.mkdir(parents=True, exist_ok=True)
@@ -185,12 +231,68 @@ def write_license_dir(prefix: str, suffix: str, files: dict[str, bytes]) -> None
         (destination / name).write_bytes(data)
 
 
+def atomic_write_text(path: Path, content: str) -> None:
+    """Replace a text file without exposing a partially written file."""
+
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(content)
+        os.chmod(temporary, path.stat().st_mode)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def commit_updates(files: dict[Path, str], staged_licenses: Path) -> None:
+    """Apply staged changes with rollback if a local filesystem operation fails."""
+
+    originals = {path: path.read_bytes() for path in files}
+    backup = LICENSES.with_name(f".{LICENSES.name}.backup-{os.getpid()}")
+    moved_licenses = False
+    try:
+        for path, content in files.items():
+            atomic_write_text(path, content)
+        if backup.exists():
+            shutil.rmtree(backup)
+        os.replace(LICENSES, backup)
+        moved_licenses = True
+        os.replace(staged_licenses, LICENSES)
+    except Exception:
+        for path, content in originals.items():
+            descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.rollback.", dir=path.parent)
+            temporary = Path(temporary_name)
+            try:
+                with os.fdopen(descriptor, "wb") as stream:
+                    stream.write(content)
+                os.chmod(temporary, path.stat().st_mode)
+                os.replace(temporary, path)
+            finally:
+                temporary.unlink(missing_ok=True)
+        if moved_licenses:
+            if LICENSES.exists():
+                shutil.rmtree(LICENSES)
+            os.replace(backup, LICENSES)
+        raise
+    finally:
+        if backup.exists():
+            shutil.rmtree(backup)
+
+
 def update() -> list[str]:
     original_dockerfile = DOCKERFILE.read_text(encoding="utf-8")
     original_notices = NOTICES.read_text(encoding="utf-8")
+    original_tool_versions = TOOL_VERSIONS.read_text(encoding="utf-8")
     dockerfile = original_dockerfile
     notices = original_notices
+    tool_versions = original_tool_versions
     changes: list[str] = []
+
+    temporary = tempfile.TemporaryDirectory(prefix=".update-pins-", dir=ROOT)
+    staging = Path(temporary.name)
+    staged_licenses = staging / "third_party_licenses"
+    shutil.copytree(LICENSES, staged_licenses)
 
     for label, reference, repository in DOCKER_PINS:
         dockerfile, change = update_docker_pin(dockerfile, label, reference, repository)
@@ -207,6 +309,7 @@ def update() -> list[str]:
             filename = f"terraform_{terraform_version}_linux_{arch}.zip"
             dockerfile = set_arg(dockerfile, f"TERRAFORM_SHA256_{arch.upper()}", checksum_file(terraform_sums, filename))
         write_license_dir(
+            staged_licenses,
             "terraform",
             terraform_version,
             {"LICENSE": request(f"https://raw.githubusercontent.com/hashicorp/terraform/v{terraform_version}/LICENSE")},
@@ -232,6 +335,7 @@ def update() -> list[str]:
                 checksum_file(sums, f"tflint_linux_{arch}.zip"),
             )
         write_license_dir(
+            staged_licenses,
             "tflint",
             tflint_version,
             {
@@ -260,6 +364,7 @@ def update() -> list[str]:
                 checksum_file(sums, f"gh_{gh_version}_linux_{arch}.tar.gz"),
             )
         write_license_dir(
+            staged_licenses,
             "github-cli",
             gh_version,
             {"LICENSE": request(f"https://raw.githubusercontent.com/cli/cli/{gh_tag}/LICENSE")},
@@ -279,6 +384,7 @@ def update() -> list[str]:
         dockerfile = set_arg(dockerfile, "TERRAGRUNT_VERSION", terragrunt_version)
         dockerfile = set_arg(dockerfile, "TERRAGRUNT_COMMIT", terragrunt_commit)
         write_license_dir(
+            staged_licenses,
             "terragrunt",
             terragrunt_version,
             {"LICENSE.txt": request(f"https://raw.githubusercontent.com/gruntwork-io/terragrunt/{terragrunt_tag}/LICENSE.txt")},
@@ -297,6 +403,7 @@ def update() -> list[str]:
         new_short = docs_commit[:8]
         dockerfile = set_arg(dockerfile, "TERRAFORM_DOCS_COMMIT", docs_commit)
         write_license_dir(
+            staged_licenses,
             "terraform-docs",
             new_short,
             {"LICENSE": request(f"https://raw.githubusercontent.com/terraform-docs/terraform-docs/{docs_tag}/LICENSE")},
@@ -325,9 +432,11 @@ def update() -> list[str]:
                 license_files = {
                     "LICENSE.txt": request(f"https://raw.githubusercontent.com/aws/aws-cli/{aws_version}/LICENSE.txt"),
                     "THIRD_PARTY_LICENSES": bundle.read("aws/THIRD_PARTY_LICENSES"),
-                    "APACHE-2.0.txt": (next(LICENSES.glob("aws-cli-*/APACHE-2.0.txt"))).read_bytes(),
+                    "APACHE-2.0.txt": (
+                        next(staged_licenses.glob("aws-cli-*/APACHE-2.0.txt"))
+                    ).read_bytes(),
                 }
-        write_license_dir("aws-cli", aws_version, license_files)
+        write_license_dir(staged_licenses, "aws-cli", aws_version, license_files)
         notices = replace_literal_once(
             notices,
             f"aws-cli-{old}/",
@@ -341,6 +450,22 @@ def update() -> list[str]:
         old = arg(dockerfile, "NPM_VERSION")
         dockerfile = set_arg(dockerfile, "NPM_VERSION", npm_version)
         changes.append(f"npm {old} -> {npm_version}")
+
+    go_licenses_tag, _, _ = github_release("google/go-licenses")
+    go_licenses_version = go_licenses_tag.removeprefix("v")
+    if arg(dockerfile, "GO_LICENSES_VERSION") != go_licenses_version:
+        old = arg(dockerfile, "GO_LICENSES_VERSION")
+        dockerfile = set_arg(dockerfile, "GO_LICENSES_VERSION", go_licenses_version)
+        changes.append(f"go-licenses {old} -> {go_licenses_version}")
+
+    cosign_tag, _, _ = github_release("sigstore/cosign")
+    cosign_version = cosign_tag.removeprefix("v")
+    current_cosign = env_version(tool_versions, "COSIGN_VERSION")
+    if current_cosign != cosign_version:
+        tool_versions = set_env_version(
+            tool_versions, "COSIGN_VERSION", cosign_version
+        )
+        changes.append(f"Cosign {current_cosign} -> {cosign_version}")
 
     for module, pattern in (("golang.org/x/crypto", r"go get golang.org/x/crypto@v[^ ]+"), ("golang.org/x/net", r"golang.org/x/net@v[^ ]+")):
         latest = api(f"https://proxy.golang.org/{module}/@latest")["Version"]
@@ -363,10 +488,16 @@ def update() -> list[str]:
             dockerfile = set_arg(dockerfile, name, latest)
             changes.append(f"{repository} {current[:8]} -> {latest[:8]}")
 
+    files: dict[Path, str] = {}
     if dockerfile != original_dockerfile:
-        DOCKERFILE.write_text(dockerfile, encoding="utf-8", newline="\n")
+        files[DOCKERFILE] = dockerfile
     if notices != original_notices:
-        NOTICES.write_text(notices, encoding="utf-8", newline="\n")
+        files[NOTICES] = notices
+    if tool_versions != original_tool_versions:
+        files[TOOL_VERSIONS] = tool_versions
+    if files:
+        commit_updates(files, staged_licenses)
+    temporary.cleanup()
     return changes
 
 

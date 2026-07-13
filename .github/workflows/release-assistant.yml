@@ -1,0 +1,119 @@
+name: Finalize a release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing image/tag version without the v prefix (for example 1.0.3)
+        required: true
+        type: string
+
+concurrency:
+  group: release-assistant
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  finalize:
+    name: Propose release metadata and devcontainer digest
+    if: github.repository == '0nde/aws-archi' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: maintenance
+    env:
+      GH_TOKEN: ${{ secrets.MAINTENANCE_TOKEN }}
+      IMAGE: ghcr.io/0nde/aws-archi
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Validate the existing release candidate
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Version must be a semantic version without the v prefix" >&2
+            exit 1
+          fi
+          test -n "$GH_TOKEN" || { echo "MAINTENANCE_TOKEN is missing" >&2; exit 1; }
+
+          tag="v${VERSION}"
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" >/dev/null || {
+            echo "${tag} does not exist. Create and push the reviewed final tag, wait for the image workflow, then run this assistant." >&2
+            exit 1
+          }
+
+          digest=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" --format '{{json .Manifest}}' | jq -r '.digest')
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "Published release image not found" >&2; exit 1; }
+          echo "DIGEST=$digest" >> "$GITHUB_ENV"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+      - name: Pin the released canonical image
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          for path in (
+              Path(".devcontainer/devcontainer.json"),
+              Path(".devcontainer/docker/devcontainer.json"),
+          ):
+              document = json.loads(path.read_text(encoding="utf-8"))
+              document["image"] = f"ghcr.io/0nde/aws-archi@{os.environ['DIGEST']}"
+              path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+          PY
+      - id: changes
+        name: Create or refresh the release pull request
+        env:
+          BRANCH: release/v${{ inputs.version }}
+        run: |
+          if git diff --quiet -- .devcontainer/devcontainer.json .devcontainer/docker/devcontainer.json; then
+            echo "The devcontainer already pins ${DIGEST}." >> "$GITHUB_STEP_SUMMARY"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git config user.name "aws-archi release assistant"
+          git config user.email "3944130+0nde@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add .devcontainer/devcontainer.json .devcontainer/docker/devcontainer.json
+          git diff --cached --check
+          git commit -m "chore: pin ${TAG} devcontainer image"
+          gh auth setup-git
+          git push --force --set-upstream origin "$BRANCH"
+
+          cat > "$RUNNER_TEMP/release-pr.md" <<EOF
+          Pins the Dev Container to the verified canonical GHCR image for **${TAG}**:
+
+          \`${IMAGE}@${DIGEST}\`
+
+          This pull request was prepared automatically and will not be merged automatically.
+          EOF
+
+          number=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --title "chore: pin ${TAG} devcontainer image" --body-file "$RUNNER_TEMP/release-pr.md"
+          else
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore: pin ${TAG} devcontainer image" \
+              --body-file "$RUNNER_TEMP/release-pr.md"
+          fi
+          cat "$RUNNER_TEMP/release-pr.md" >> "$GITHUB_STEP_SUMMARY"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+      - name: Create a human-reviewed draft GitHub release
+        run: |
+          if gh release view "$TAG" --json isDraft --jq '.isDraft' >/dev/null 2>&1; then
+            echo "A GitHub release already exists for ${TAG}; it was left unchanged." >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh release create "$TAG" \
+              --verify-tag \
+              --draft \
+              --generate-notes \
+              --title "$TAG"
+            echo "A draft GitHub release was generated. Review it before publishing." >> "$GITHUB_STEP_SUMMARY"
+          fi
