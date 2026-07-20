@@ -228,7 +228,10 @@ def write_license_dir(
         shutil.rmtree(matches[0])
     destination.mkdir(parents=True, exist_ok=True)
     for name, data in files.items():
-        (destination / name).write_bytes(data)
+        # Upstream license files occasionally gain extra terminal blank lines,
+        # which `git diff --check` correctly rejects in generated changes.
+        # Preserve the content while canonicalizing only its terminator.
+        (destination / name).write_bytes(data.rstrip(b"\r\n") + b"\n")
 
 
 def atomic_write_text(path: Path, content: str) -> None:

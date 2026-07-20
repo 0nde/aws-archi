@@ -199,6 +199,26 @@ class UpdatePinsTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     UPDATE_PINS.replace_literal_once(content, "old", "new", "notice")
 
+    def test_license_files_have_exactly_one_terminal_newline(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            licenses = Path(temporary)
+            current = licenses / "component-1.0"
+            current.mkdir()
+            (current / "LICENSE").write_bytes(b"old license\n")
+
+            UPDATE_PINS.write_license_dir(
+                licenses,
+                "component",
+                "2.0",
+                {"LICENSE": b"new license\r\n\r\n"},
+            )
+
+            self.assertFalse(current.exists())
+            self.assertEqual(
+                b"new license\n",
+                (licenses / "component-2.0" / "LICENSE").read_bytes(),
+            )
+
     def test_full_update_with_current_pins_does_not_rewrite_repository(self):
         temporary, root, dockerfile, notices, licenses, tool_versions = self.isolated_repository()
         self.addCleanup(temporary.cleanup)
@@ -268,7 +288,8 @@ class UpdatePinsTests(unittest.TestCase):
         self.assertIn("terraform-99.99.99/LICENSE", notices.read_text(encoding="utf-8"))
         self.assertFalse((licenses / f"terraform-{old_terraform}").exists())
         self.assertEqual(
-            b"new license", (licenses / "terraform-99.99.99" / "LICENSE").read_bytes()
+            b"new license\n",
+            (licenses / "terraform-99.99.99" / "LICENSE").read_bytes(),
         )
 
     def test_aws_cli_update_uses_repository_apache_license(self):
@@ -311,11 +332,11 @@ class UpdatePinsTests(unittest.TestCase):
             changes,
         )
         self.assertEqual(
-            (root / "LICENSE").read_bytes(),
+            (root / "LICENSE").read_bytes().rstrip(b"\r\n") + b"\n",
             (destination / "APACHE-2.0.txt").read_bytes(),
         )
         self.assertEqual(
-            b"updated third-party licenses",
+            b"updated third-party licenses\n",
             (destination / "THIRD_PARTY_LICENSES").read_bytes(),
         )
 
