@@ -289,8 +289,8 @@ def update() -> list[str]:
     tool_versions = original_tool_versions
     changes: list[str] = []
 
-    temporary = tempfile.TemporaryDirectory(prefix=".update-pins-", dir=ROOT)
-    staging = Path(temporary.name)
+    staging_workspace = tempfile.TemporaryDirectory(prefix=".update-pins-", dir=ROOT)
+    staging = Path(staging_workspace.name)
     staged_licenses = staging / "third_party_licenses"
     shutil.copytree(LICENSES, staged_licenses)
 
@@ -416,16 +416,17 @@ def update() -> list[str]:
             data = request(f"https://awscli.amazonaws.com/awscli-exe-linux-{aws_arch}-{aws_version}.zip")
             archives[aws_arch] = data
             dockerfile = set_arg(dockerfile, f"AWS_CLI_SHA256_{arch}", sha256(data))
-        with tempfile.TemporaryDirectory() as temporary:
-            archive = Path(temporary) / "awscliv2.zip"
+        with tempfile.TemporaryDirectory() as archive_directory:
+            archive = Path(archive_directory) / "awscliv2.zip"
             archive.write_bytes(archives["x86_64"])
             with zipfile.ZipFile(archive) as bundle:
                 license_files = {
                     "LICENSE.txt": request(f"https://raw.githubusercontent.com/aws/aws-cli/{aws_version}/LICENSE.txt"),
                     "THIRD_PARTY_LICENSES": bundle.read("aws/THIRD_PARTY_LICENSES"),
-                    "APACHE-2.0.txt": (
-                        next(staged_licenses.glob("aws-cli-*/APACHE-2.0.txt"))
-                    ).read_bytes(),
+                    # The project and AWS CLI both use Apache-2.0. Read the
+                    # canonical text from the repository instead of depending
+                    # on the previous generated license directory being intact.
+                    "APACHE-2.0.txt": (ROOT / "LICENSE").read_bytes(),
                 }
         write_license_dir(staged_licenses, "aws-cli", aws_version, license_files)
         notices = replace_literal_once(
@@ -495,7 +496,7 @@ def update() -> list[str]:
         files[TOOL_VERSIONS] = tool_versions
     if files:
         commit_updates(files, staged_licenses)
-    temporary.cleanup()
+    staging_workspace.cleanup()
     return changes
 
 
