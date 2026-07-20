@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import io
 import importlib.util
 import shutil
 import tempfile
 import unittest
 import urllib.error
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -44,6 +46,7 @@ class UpdatePinsTests(unittest.TestCase):
             (UPDATE_PINS.DOCKERFILE, dockerfile),
             (UPDATE_PINS.NOTICES, notices),
             (UPDATE_PINS.TOOL_VERSIONS, tool_versions),
+            (UPDATE_PINS.ROOT / "LICENSE", root / "LICENSE"),
         ):
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
@@ -266,6 +269,54 @@ class UpdatePinsTests(unittest.TestCase):
         self.assertFalse((licenses / f"terraform-{old_terraform}").exists())
         self.assertEqual(
             b"new license", (licenses / "terraform-99.99.99" / "LICENSE").read_bytes()
+        )
+
+    def test_aws_cli_update_uses_repository_apache_license(self):
+        temporary, root, dockerfile, notices, licenses, tool_versions = (
+            self.isolated_repository()
+        )
+        self.addCleanup(temporary.cleanup)
+        for apache_license in licenses.glob("aws-cli-*/APACHE-2.0.txt"):
+            apache_license.unlink()
+
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as bundle:
+            bundle.writestr("aws/THIRD_PARTY_LICENSES", b"updated third-party licenses")
+
+        def request(url: str) -> bytes:
+            if url.endswith(".zip"):
+                return archive.getvalue()
+            if url.endswith("/LICENSE.txt") and "aws/aws-cli" in url:
+                return b"updated AWS CLI license"
+            raise AssertionError(f"Unexpected request URL: {url}")
+
+        with (
+            mock.patch.object(UPDATE_PINS, "ROOT", root),
+            mock.patch.object(UPDATE_PINS, "DOCKERFILE", dockerfile),
+            mock.patch.object(UPDATE_PINS, "NOTICES", notices),
+            mock.patch.object(UPDATE_PINS, "LICENSES", licenses),
+            mock.patch.object(UPDATE_PINS, "TOOL_VERSIONS", tool_versions),
+            mock.patch.object(UPDATE_PINS, "DOCKER_PINS", ()),
+            mock.patch.object(UPDATE_PINS, "api", side_effect=self.current_api),
+            mock.patch.object(UPDATE_PINS, "github_release", side_effect=self.current_release),
+            mock.patch.object(UPDATE_PINS, "latest_aws_cli_tag", return_value="2.99.0"),
+            mock.patch.object(UPDATE_PINS, "github_head", side_effect=self.current_head),
+            mock.patch.object(UPDATE_PINS, "request", side_effect=request),
+        ):
+            changes = UPDATE_PINS.update()
+
+        destination = licenses / "aws-cli-2.99.0"
+        self.assertIn(
+            f"AWS CLI {self.dockerfile_arg('AWS_CLI_VERSION')} -> 2.99.0",
+            changes,
+        )
+        self.assertEqual(
+            (root / "LICENSE").read_bytes(),
+            (destination / "APACHE-2.0.txt").read_bytes(),
+        )
+        self.assertEqual(
+            b"updated third-party licenses",
+            (destination / "THIRD_PARTY_LICENSES").read_bytes(),
         )
 
     def test_source_built_go_tools_have_immutable_source_pins(self):
