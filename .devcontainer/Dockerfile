@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.24@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
-FROM node:24-trixie-slim@sha256:366fdef91728b1b7fa18c84fba63b6e79ed77b7e10cc206878e9705da4d7b169 AS node
+FROM node:24-trixie-slim@sha256:ae91dcc111a68c9d2d81ff2a17bda61be126426176fde6fe7d08ab13b7f50573 AS node
 
-FROM golang:1.26-trixie@sha256:116489021a0d8ca3facf79f84ee69052cff88733547150a644d45c5eaa91dc43 AS go-tools-base
+FROM golang:1.26-trixie@sha256:4ee9ffa999b4583ce281939cdff828763083610292f252279a0cee77473bd9a7 AS go-tools-base
 ARG GO_LICENSES_VERSION=2.0.1
 ENV GOTOOLCHAIN=local
 RUN test "$(printf '%s\n' go1.26.4 "$(go env GOVERSION)" | sort -V | head -n1)" = go1.26.4
@@ -29,8 +29,8 @@ RUN --mount=type=cache,id=terraform-go-mod,target=/go/pkg/mod,sharing=locked \
     && go-licenses report . --ignore github.com/hashicorp/terraform > /terraform-go-licenses.csv
 
 FROM go-tools-base AS tflint-builder
-ARG TFLINT_VERSION=0.63.1
-ARG TFLINT_COMMIT=cd0cce4fa3decaabba3c0667c235651ac06a4221
+ARG TFLINT_VERSION=0.64.0
+ARG TFLINT_COMMIT=15c65a33b322750f6131e286cd9597896299ba32
 ARG TFLINT_REKOR_VERSION=1.5.3
 WORKDIR /src/tflint
 RUN --mount=type=cache,id=tflint-go-mod,target=/go/pkg/mod,sharing=locked \
@@ -70,8 +70,8 @@ RUN --mount=type=cache,id=terraform-docs-go-mod,target=/go/pkg/mod,sharing=locke
     && go-licenses report . > /terraform-docs-go-licenses.csv
 
 FROM go-tools-base AS terragrunt-builder
-ARG TERRAGRUNT_VERSION=1.1.0
-ARG TERRAGRUNT_COMMIT=aad3397a3552a9d5fab90c587e6027d31f2b6ee1
+ARG TERRAGRUNT_VERSION=1.1.1
+ARG TERRAGRUNT_COMMIT=19dcb749b4beea4a87e966927242ea93248b148e
 WORKDIR /src/terragrunt
 RUN --mount=type=cache,id=terragrunt-go-mod,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,id=terragrunt-go-build,target=/root/.cache/go-build,sharing=locked \
@@ -85,20 +85,20 @@ RUN --mount=type=cache,id=terragrunt-go-mod,target=/go/pkg/mod,sharing=locked \
       -o /terragrunt . \
     && go-licenses report . > /terragrunt-go-licenses.csv
 
-FROM python:3.14-slim-trixie@sha256:b877e50bd90de10af8d82c57a022fc2e0dc731c5320d762a27986facfc3355c1
+FROM python:3.14-slim-trixie@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6
 
 ARG TARGETARCH
 ARG USERNAME=devuser
 ARG USER_UID=1000
 ARG USER_GID=1000
 ARG GH_VERSION=2.96.0
-ARG AWS_CLI_VERSION=2.35.21
+ARG AWS_CLI_VERSION=2.36.8
 ARG NPM_VERSION=12.0.1
 ARG GH_SHA256_AMD64=83d5c2ccad5498f58bf6368acb1ab32588cf43ab3a4b1c301bf36328b1c8bd60
 ARG GH_SHA256_ARM64=06f86ec7103d41993b76cd78072f43595c34aaa56506d971d9860e67140bf909
-ARG AWS_CLI_SHA256_AMD64=1fe665267a6149dfb8551cec52b419fa6e82533fab6dd7678939209246e792ee
-ARG AWS_CLI_SHA256_ARM64=1d7a1f26a1bd9f0610663b7a4b571def6990692c8c66223ebe09ac2445787bcc
-ARG OH_MY_ZSH_COMMIT=677a4592b18c08ddea737f8aca70bac0e9fc9313
+ARG AWS_CLI_SHA256_AMD64=829a2bbad5b4821a8d006a133c34fa5ce2f362ae003ac39aa0865a6d1e1711f2
+ARG AWS_CLI_SHA256_ARM64=fedb42aaa0f4e9623c626008139a0e4741cfa3f7ea3067c5a479390126e09f58
+ARG OH_MY_ZSH_COMMIT=b37dd49ca5bfe0d99b35607637152cb8cc8b29d7
 ARG ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
 ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=1d85c692615a25fe2293bdd44b34c217d5d2bf04
 

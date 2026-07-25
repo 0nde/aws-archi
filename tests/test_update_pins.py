@@ -18,6 +18,72 @@ if SPEC is None or SPEC.loader is None:
 UPDATE_PINS = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(UPDATE_PINS)
 
+# Short but recognisable stand-ins for the redistributed license texts. They only
+# need the markers the updater checks, not the full legal text.
+LICENSE_TEXTS = {
+    "Apache-2.0": b"Apache License\nVersion 2.0, January 2004\n",
+    "BUSL-1.1": b'Business Source License 1.1\n\n"Business Source License" is a trademark.\n',
+    "MIT": b"MIT License\n\nCopyright (c) 2026 Example\n",
+    "MPL-2.0": b"Mozilla Public License, version 2.0\n\n1. Definitions\n",
+}
+# Upstream layout the updater is expected to read, including the neighbouring
+# `terraform/LICENSE` file that carries MPL-2.0 text and must never be written
+# to `LICENSE-BUSL`.
+UPSTREAM_LICENSES = {
+    "hashicorp/terraform": {"LICENSE": "BUSL-1.1"},
+    "terraform-linters/tflint": {
+        "LICENSE": "MPL-2.0",
+        "LICENSE-BUSL": "BUSL-1.1",
+        "terraform/LICENSE": "MPL-2.0",
+        "terraform/LICENSE-BUSL": "BUSL-1.1",
+    },
+    "cli/cli": {"LICENSE": "MIT"},
+    "gruntwork-io/terragrunt": {"LICENSE.txt": "MIT"},
+    "terraform-docs/terraform-docs": {"LICENSE": "MIT"},
+    "aws/aws-cli": {"LICENSE.txt": "Apache-2.0"},
+}
+RAW_PREFIX = "https://raw.githubusercontent.com/"
+
+
+class FakeUpstream:
+    """Serve deterministic upstream payloads and record every requested URL."""
+
+    def __init__(
+        self,
+        *,
+        archive: bytes | None = None,
+        overrides: dict[str, bytes | None] | None = None,
+    ):
+        self.archive = archive
+        self.overrides = overrides or {}
+        self.urls: list[str] = []
+
+    def __call__(self, url: str) -> bytes:
+        self.urls.append(url)
+        if url.endswith(".zip") and self.archive is not None:
+            return self.archive
+        if not url.startswith(RAW_PREFIX):
+            raise AssertionError(f"Unexpected request URL: {url}")
+        owner, repository_name, _ref, path = url[len(RAW_PREFIX) :].split("/", 3)
+        repository = f"{owner}/{repository_name}"
+        if path in self.overrides:
+            payload = self.overrides[path]
+            if payload is None:
+                raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+            return payload
+        license_id = UPSTREAM_LICENSES.get(repository, {}).get(path)
+        if license_id is None:
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+        return LICENSE_TEXTS[license_id]
+
+    def paths(self, repository: str) -> list[str]:
+        prefix = f"{RAW_PREFIX}{repository}/"
+        return [
+            url[len(prefix) :].split("/", 1)[1]
+            for url in self.urls
+            if url.startswith(prefix)
+        ]
+
 
 class FakeResponse:
     def __init__(self, digest: str = "", body: bytes = b""):
@@ -262,6 +328,7 @@ class UpdatePinsTests(unittest.TestCase):
                 return "v99.99.99", "f" * 40, {}
             return self.current_release(repository)
 
+        upstream = FakeUpstream()
         with (
             mock.patch.object(UPDATE_PINS, "ROOT", root),
             mock.patch.object(UPDATE_PINS, "DOCKERFILE", dockerfile),
@@ -277,7 +344,7 @@ class UpdatePinsTests(unittest.TestCase):
                 return_value=self.dockerfile_arg("AWS_CLI_VERSION"),
             ),
             mock.patch.object(UPDATE_PINS, "github_head", side_effect=self.current_head),
-            mock.patch.object(UPDATE_PINS, "request", return_value=b"new license"),
+            mock.patch.object(UPDATE_PINS, "request", side_effect=upstream),
         ):
             changes = UPDATE_PINS.update()
 
@@ -288,7 +355,7 @@ class UpdatePinsTests(unittest.TestCase):
         self.assertIn("terraform-99.99.99/LICENSE", notices.read_text(encoding="utf-8"))
         self.assertFalse((licenses / f"terraform-{old_terraform}").exists())
         self.assertEqual(
-            b"new license\n",
+            LICENSE_TEXTS["BUSL-1.1"],
             (licenses / "terraform-99.99.99" / "LICENSE").read_bytes(),
         )
 
@@ -304,12 +371,7 @@ class UpdatePinsTests(unittest.TestCase):
         with zipfile.ZipFile(archive, "w") as bundle:
             bundle.writestr("aws/THIRD_PARTY_LICENSES", b"updated third-party licenses")
 
-        def request(url: str) -> bytes:
-            if url.endswith(".zip"):
-                return archive.getvalue()
-            if url.endswith("/LICENSE.txt") and "aws/aws-cli" in url:
-                return b"updated AWS CLI license"
-            raise AssertionError(f"Unexpected request URL: {url}")
+        upstream = FakeUpstream(archive=archive.getvalue())
 
         with (
             mock.patch.object(UPDATE_PINS, "ROOT", root),
@@ -322,7 +384,7 @@ class UpdatePinsTests(unittest.TestCase):
             mock.patch.object(UPDATE_PINS, "github_release", side_effect=self.current_release),
             mock.patch.object(UPDATE_PINS, "latest_aws_cli_tag", return_value="2.99.0"),
             mock.patch.object(UPDATE_PINS, "github_head", side_effect=self.current_head),
-            mock.patch.object(UPDATE_PINS, "request", side_effect=request),
+            mock.patch.object(UPDATE_PINS, "request", side_effect=upstream),
         ):
             changes = UPDATE_PINS.update()
 
@@ -362,6 +424,7 @@ class UpdatePinsTests(unittest.TestCase):
                 return {"Version": "v1.5.99"}
             return self.current_api(url)
 
+        upstream = FakeUpstream()
         with (
             mock.patch.object(UPDATE_PINS, "ROOT", root),
             mock.patch.object(UPDATE_PINS, "DOCKERFILE", dockerfile),
@@ -377,7 +440,7 @@ class UpdatePinsTests(unittest.TestCase):
                 return_value=self.dockerfile_arg("AWS_CLI_VERSION"),
             ),
             mock.patch.object(UPDATE_PINS, "github_head", side_effect=self.current_head),
-            mock.patch.object(UPDATE_PINS, "request", return_value=b"new license"),
+            mock.patch.object(UPDATE_PINS, "request", side_effect=upstream),
         ):
             changes = UPDATE_PINS.update()
 
@@ -388,6 +451,139 @@ class UpdatePinsTests(unittest.TestCase):
         self.assertIn("ARG TFLINT_REKOR_VERSION=1.5.99", updated)
         self.assertIn("tflint-99.88.77/", notices.read_text(encoding="utf-8"))
         self.assertTrue((licenses / "tflint-99.88.77" / "LICENSE").is_file())
+
+    def tflint_update(self, upstream: FakeUpstream):
+        """Run a TFLint-only pin update against a fake upstream."""
+
+        temporary, root, dockerfile, notices, licenses, tool_versions = self.isolated_repository()
+        self.addCleanup(temporary.cleanup)
+        old_version = self.dockerfile_arg("TFLINT_VERSION")
+
+        def github_release(repository: str):
+            if repository == "terraform-linters/tflint":
+                return "v99.88.77", "e" * 40, {}
+            return self.current_release(repository)
+
+        with (
+            mock.patch.object(UPDATE_PINS, "ROOT", root),
+            mock.patch.object(UPDATE_PINS, "DOCKERFILE", dockerfile),
+            mock.patch.object(UPDATE_PINS, "NOTICES", notices),
+            mock.patch.object(UPDATE_PINS, "LICENSES", licenses),
+            mock.patch.object(UPDATE_PINS, "TOOL_VERSIONS", tool_versions),
+            mock.patch.object(UPDATE_PINS, "DOCKER_PINS", ()),
+            mock.patch.object(UPDATE_PINS, "api", side_effect=self.current_api),
+            mock.patch.object(UPDATE_PINS, "github_release", side_effect=github_release),
+            mock.patch.object(
+                UPDATE_PINS,
+                "latest_aws_cli_tag",
+                return_value=self.dockerfile_arg("AWS_CLI_VERSION"),
+            ),
+            mock.patch.object(UPDATE_PINS, "github_head", side_effect=self.current_head),
+            mock.patch.object(UPDATE_PINS, "request", side_effect=upstream),
+        ):
+            try:
+                UPDATE_PINS.update()
+                failure: Exception | None = None
+            except Exception as error:  # noqa: BLE001 - the tests assert on the failure
+                failure = error
+        return licenses, notices, old_version, failure
+
+    def test_tflint_busl_notice_comes_from_its_own_upstream_file(self):
+        upstream = FakeUpstream()
+        licenses, notices, old_version, failure = self.tflint_update(upstream)
+
+        self.assertIsNone(failure)
+        destination = licenses / "tflint-99.88.77"
+        license_text = (destination / "LICENSE").read_bytes()
+        busl_text = (destination / "LICENSE-BUSL").read_bytes()
+
+        # Each notice file must come from its own upstream path.
+        self.assertEqual(
+            ["LICENSE", "terraform/LICENSE-BUSL"],
+            sorted(upstream.paths("terraform-linters/tflint")),
+        )
+        # MPL-2.0 and BUSL-1.1 are different licenses and different files.
+        self.assertNotEqual(license_text, busl_text)
+        self.assertIn(b"Mozilla Public License", license_text)
+        self.assertNotIn(b"Mozilla Public License", busl_text)
+        self.assertIn(b"Business Source License 1.1", busl_text)
+        # The superseded directory is replaced, not left behind.
+        self.assertFalse((licenses / f"tflint-{old_version}").exists())
+        self.assertIn("tflint-99.88.77/", notices.read_text(encoding="utf-8"))
+
+    def test_tflint_busl_notice_rejects_the_neighbouring_mpl_file(self):
+        # Regression guard: `terraform/LICENSE` holds the MPL-2.0 notice of the
+        # embedded Terraform sources, so serving it as the BUSL grant must fail.
+        upstream = FakeUpstream(
+            overrides={"terraform/LICENSE-BUSL": LICENSE_TEXTS["MPL-2.0"]}
+        )
+        licenses, _notices, old_version, failure = self.tflint_update(upstream)
+
+        self.assertIsInstance(failure, RuntimeError)
+        self.assertIn("BUSL-1.1", str(failure))
+        self.assertTrue((licenses / f"tflint-{old_version}").is_dir())
+        self.assertFalse((licenses / "tflint-99.88.77").exists())
+
+    def test_tflint_update_fails_when_an_upstream_license_is_missing(self):
+        upstream = FakeUpstream(overrides={"terraform/LICENSE-BUSL": None})
+        licenses, _notices, old_version, failure = self.tflint_update(upstream)
+
+        self.assertIsInstance(failure, urllib.error.HTTPError)
+        self.assertEqual(404, failure.code)
+        self.assertTrue((licenses / f"tflint-{old_version}").is_dir())
+        self.assertFalse((licenses / "tflint-99.88.77").exists())
+
+    def test_tflint_update_fails_on_an_empty_upstream_response(self):
+        upstream = FakeUpstream(overrides={"terraform/LICENSE-BUSL": b"   \n"})
+        licenses, _notices, old_version, failure = self.tflint_update(upstream)
+
+        self.assertIsInstance(failure, RuntimeError)
+        self.assertTrue((licenses / f"tflint-{old_version}").is_dir())
+
+    def test_write_license_dir_rejects_two_files_with_the_same_content(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            licenses = Path(temporary)
+            (licenses / "component-1.0").mkdir()
+            with self.assertRaises(RuntimeError) as raised:
+                UPDATE_PINS.write_license_dir(
+                    licenses,
+                    "component",
+                    "2.0",
+                    {"LICENSE": b"same text\n", "LICENSE-BUSL": b"same text\n"},
+                )
+
+            self.assertIn("identical content", str(raised.exception))
+            self.assertTrue((licenses / "component-1.0").is_dir())
+            self.assertFalse((licenses / "component-2.0").exists())
+
+    def test_checked_license_requires_the_expected_marker(self):
+        self.assertEqual(
+            LICENSE_TEXTS["BUSL-1.1"],
+            UPDATE_PINS.checked_license(LICENSE_TEXTS["BUSL-1.1"], "BUSL-1.1", "test"),
+        )
+        for license_id, data in (
+            ("BUSL-1.1", LICENSE_TEXTS["MPL-2.0"]),
+            ("MPL-2.0", LICENSE_TEXTS["BUSL-1.1"]),
+            ("MIT", b""),
+        ):
+            with self.subTest(license_id=license_id):
+                with self.assertRaises(RuntimeError):
+                    UPDATE_PINS.checked_license(data, license_id, "test")
+
+    def test_committed_tflint_notices_reproduce_two_distinct_licenses(self):
+        directories = sorted(UPDATE_PINS.LICENSES.glob("tflint-*"))
+        self.assertEqual(1, len(directories), directories)
+        license_text = (directories[0] / "LICENSE").read_bytes()
+        busl_text = (directories[0] / "LICENSE-BUSL").read_bytes()
+
+        self.assertIn(b"Mozilla Public License", license_text)
+        self.assertIn(b"Business Source License 1.1", busl_text)
+        self.assertNotIn(b"Mozilla Public License", busl_text)
+        self.assertNotEqual(license_text, busl_text)
+        self.assertIn(
+            f"{directories[0].name}/",
+            UPDATE_PINS.NOTICES.read_text(encoding="utf-8"),
+        )
 
     def test_commit_updates_rolls_back_files_and_licenses_on_failure(self):
         temporary, root, dockerfile, _, licenses, _ = self.isolated_repository()
