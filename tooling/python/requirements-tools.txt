@@ -28,10 +28,10 @@ botocore==1.43.46 \
     # via
     #   boto3
     #   s3transfer
-cfn-lint==1.53.0 \
-    --hash=sha256:8a91d1f0d8d18614410a0c1676213df8cd0ac55fa462f3f6369fb9fdaa7ae28d \
-    --hash=sha256:dcf285939dea3c15e06bcb23a817bbdecb6c3e0ab19d98147877f04e02b5b07c
-    # via -r tooling/python/requirements-tools.in
+cfn-lint==1.53.2 \
+    --hash=sha256:4de8a820b8a098b9d8ed0fbe25c7f2dd925b9425b48856c07120481b09bdd1a6 \
+    --hash=sha256:f2f4a63bc0e6dce802cc429993e6c7b2a4dac4bc1f4b0e743709cb684fad345b
+    # via -r requirements-tools.in
 dill==0.4.1 \
     --hash=sha256:1e1ce33e978ae97fcfcff5638477032b801c46c7c65cf717f95fbc2248f79a9d \
     --hash=sha256:423092df4182177d4d8ba8290c8a5b640c66ab35ec7da59ccfa00f6fa3eea5fa
@@ -207,7 +207,7 @@ pydantic-core==2.46.4 \
 pylint==4.0.6 \
     --hash=sha256:52f19191bee08bf103f9705ad1a0ece4aa5a0a4ef2bdcbd969375a1e6f6579d5 \
     --hash=sha256:d11a0e1fdb7b1cd46ec5d6fc78fee8b95f28695b2d6140e5809925f61e32ea54
-    # via -r tooling/python/requirements-tools.in
+    # via -r requirements-tools.in
 python-dateutil==2.9.0.post0 \
     --hash=sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3 \
     --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
