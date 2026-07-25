@@ -37,6 +37,15 @@ DOCKER_MANIFEST_ACCEPT = ", ".join(
         "application/vnd.docker.distribution.manifest.v2+json",
     )
 )
+# Case-insensitive substrings that identify a redistributed license text. They
+# guard against an upstream project moving, renaming or relicensing a file that
+# the notices claim to reproduce.
+LICENSE_MARKERS = {
+    "Apache-2.0": "Apache License",
+    "BUSL-1.1": "Business Source License 1.1",
+    "MIT": "MIT License",
+    "MPL-2.0": "Mozilla Public License",
+}
 DOCKER_PINS = (
     ("Dockerfile frontend", "docker/dockerfile:1.24", "docker/dockerfile"),
     ("Node.js base image", "node:24-trixie-slim", "library/node"),
@@ -89,6 +98,26 @@ def api(url: str):
 
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def checked_license(data: bytes, license_id: str, source: str) -> bytes:
+    """Fail unless a license payload really is the license the notices claim."""
+
+    if not data.strip():
+        raise RuntimeError(f"Empty license payload from {source}")
+    marker = LICENSE_MARKERS[license_id]
+    if marker.casefold() not in data.decode("utf-8", "replace").casefold():
+        raise RuntimeError(
+            f"{source} does not contain the {license_id} marker {marker!r}; "
+            "the upstream file was moved, renamed or relicensed"
+        )
+    return data
+
+
+def license_payload(url: str, license_id: str) -> bytes:
+    """Download one license file, failing loudly on HTTP or content mismatches."""
+
+    return checked_license(request(url), license_id, url)
 
 
 def replace_one(content: str, pattern: str, replacement: str, label: str) -> str:
@@ -214,6 +243,23 @@ def latest_aws_cli_tag() -> str:
 def write_license_dir(
     licenses: Path, prefix: str, suffix: str, files: dict[str, bytes]
 ) -> None:
+    if not files:
+        raise RuntimeError(f"No license file to write for {prefix}-{suffix}")
+    # Upstream license files occasionally gain extra terminal blank lines, which
+    # `git diff --check` correctly rejects in generated changes. Preserve the
+    # content while canonicalizing only its terminator.
+    payloads = {name: data.rstrip(b"\r\n") + b"\n" for name, data in files.items()}
+    # Distinct notice files must not silently collapse onto the same text: that
+    # is what happens when a download URL points at the wrong upstream path.
+    origins: dict[str, str] = {}
+    for name, data in payloads.items():
+        if not data.strip():
+            raise RuntimeError(f"Refusing to write an empty {prefix}-{suffix}/{name}")
+        first = origins.setdefault(sha256(data), name)
+        if first != name:
+            raise RuntimeError(
+                f"{prefix}-{suffix}: {name} and {first} would receive identical content"
+            )
     # A component name can prefix another one (for example, terraform and
     # terraform-docs), so require the suffix to look like a version or commit.
     matches = [
@@ -227,11 +273,8 @@ def write_license_dir(
     if matches[0] != destination:
         shutil.rmtree(matches[0])
     destination.mkdir(parents=True, exist_ok=True)
-    for name, data in files.items():
-        # Upstream license files occasionally gain extra terminal blank lines,
-        # which `git diff --check` correctly rejects in generated changes.
-        # Preserve the content while canonicalizing only its terminator.
-        (destination / name).write_bytes(data.rstrip(b"\r\n") + b"\n")
+    for name, data in payloads.items():
+        (destination / name).write_bytes(data)
 
 
 def atomic_write_text(path: Path, content: str) -> None:
@@ -312,7 +355,12 @@ def update() -> list[str]:
             staged_licenses,
             "terraform",
             terraform_version,
-            {"LICENSE": request(f"https://raw.githubusercontent.com/hashicorp/terraform/v{terraform_version}/LICENSE")},
+            {
+                "LICENSE": license_payload(
+                    f"https://raw.githubusercontent.com/hashicorp/terraform/v{terraform_version}/LICENSE",
+                    "BUSL-1.1",
+                )
+            },
         )
         notices = replace_literal_once(
             notices,
@@ -333,8 +381,18 @@ def update() -> list[str]:
             "tflint",
             tflint_version,
             {
-                "LICENSE": request(f"https://raw.githubusercontent.com/terraform-linters/tflint/{tflint_tag}/LICENSE"),
-                "LICENSE-BUSL": request(f"https://raw.githubusercontent.com/terraform-linters/tflint/{tflint_tag}/terraform/LICENSE"),
+                "LICENSE": license_payload(
+                    f"https://raw.githubusercontent.com/terraform-linters/tflint/{tflint_tag}/LICENSE",
+                    "MPL-2.0",
+                ),
+                # TFLint embeds Terraform code under `terraform/`, which carries
+                # its own BUSL-1.1 grant next to the MPL-2.0 notice of the
+                # copied Terraform sources. Reproduce the BUSL file itself, not
+                # the neighbouring `terraform/LICENSE`.
+                "LICENSE-BUSL": license_payload(
+                    f"https://raw.githubusercontent.com/terraform-linters/tflint/{tflint_tag}/terraform/LICENSE-BUSL",
+                    "BUSL-1.1",
+                ),
             },
         )
         notices = replace_literal_once(
@@ -361,7 +419,11 @@ def update() -> list[str]:
             staged_licenses,
             "github-cli",
             gh_version,
-            {"LICENSE": request(f"https://raw.githubusercontent.com/cli/cli/{gh_tag}/LICENSE")},
+            {
+                "LICENSE": license_payload(
+                    f"https://raw.githubusercontent.com/cli/cli/{gh_tag}/LICENSE", "MIT"
+                )
+            },
         )
         notices = replace_literal_once(
             notices,
@@ -381,7 +443,12 @@ def update() -> list[str]:
             staged_licenses,
             "terragrunt",
             terragrunt_version,
-            {"LICENSE.txt": request(f"https://raw.githubusercontent.com/gruntwork-io/terragrunt/{terragrunt_tag}/LICENSE.txt")},
+            {
+                "LICENSE.txt": license_payload(
+                    f"https://raw.githubusercontent.com/gruntwork-io/terragrunt/{terragrunt_tag}/LICENSE.txt",
+                    "MIT",
+                )
+            },
         )
         notices = replace_literal_once(
             notices,
@@ -400,7 +467,12 @@ def update() -> list[str]:
             staged_licenses,
             "terraform-docs",
             new_short,
-            {"LICENSE": request(f"https://raw.githubusercontent.com/terraform-docs/terraform-docs/{docs_tag}/LICENSE")},
+            {
+                "LICENSE": license_payload(
+                    f"https://raw.githubusercontent.com/terraform-docs/terraform-docs/{docs_tag}/LICENSE",
+                    "MIT",
+                )
+            },
         )
         notices = replace_literal_once(
             notices,
@@ -424,12 +496,17 @@ def update() -> list[str]:
             archive.write_bytes(archives["x86_64"])
             with zipfile.ZipFile(archive) as bundle:
                 license_files = {
-                    "LICENSE.txt": request(f"https://raw.githubusercontent.com/aws/aws-cli/{aws_version}/LICENSE.txt"),
+                    "LICENSE.txt": license_payload(
+                        f"https://raw.githubusercontent.com/aws/aws-cli/{aws_version}/LICENSE.txt",
+                        "Apache-2.0",
+                    ),
                     "THIRD_PARTY_LICENSES": bundle.read("aws/THIRD_PARTY_LICENSES"),
                     # The project and AWS CLI both use Apache-2.0. Read the
                     # canonical text from the repository instead of depending
                     # on the previous generated license directory being intact.
-                    "APACHE-2.0.txt": (ROOT / "LICENSE").read_bytes(),
+                    "APACHE-2.0.txt": checked_license(
+                        (ROOT / "LICENSE").read_bytes(), "Apache-2.0", str(ROOT / "LICENSE")
+                    ),
                 }
         write_license_dir(staged_licenses, "aws-cli", aws_version, license_files)
         notices = replace_literal_once(
