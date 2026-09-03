@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.24@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
-FROM node:24-trixie-slim@sha256:ae91dcc111a68c9d2d81ff2a17bda61be126426176fde6fe7d08ab13b7f50573 AS node
+FROM node:24-trixie-slim@sha256:50c3b2f6988dfc307b86e5301d69611af31f4789bdf232863b07d3b02fe55ae0 AS node
 
-FROM golang:1.26-trixie@sha256:4ee9ffa999b4583ce281939cdff828763083610292f252279a0cee77473bd9a7 AS go-tools-base
+FROM golang:1.26-trixie@sha256:771f3162219f7a66bb6be3fea1ba31f418932946a99ad9eac26ffd555dfcf393 AS go-tools-base
 ARG GO_LICENSES_VERSION=2.0.1
 ENV GOTOOLCHAIN=local
 RUN test "$(printf '%s\n' go1.26.4 "$(go env GOVERSION)" | sort -V | head -n1)" = go1.26.4
@@ -10,8 +10,8 @@ RUN --mount=type=cache,id=go-licenses-mod,target=/go/pkg/mod,sharing=locked \
     GOBIN=/usr/local/bin go install "github.com/google/go-licenses/v2@v${GO_LICENSES_VERSION}"
 
 FROM go-tools-base AS terraform-builder
-ARG TERRAFORM_VERSION=1.15.8
-ARG TERRAFORM_COMMIT=b9e178decf87d274d25ed36bc5a4dbc857e00420
+ARG TERRAFORM_VERSION=1.16.1
+ARG TERRAFORM_COMMIT=58e916f6706597d9d87898f9ecedf811b68c6f29
 WORKDIR /src/terraform
 RUN --mount=type=cache,id=terraform-go-mod,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,id=terraform-go-build,target=/root/.cache/go-build,sharing=locked \
@@ -31,7 +31,7 @@ RUN --mount=type=cache,id=terraform-go-mod,target=/go/pkg/mod,sharing=locked \
 FROM go-tools-base AS tflint-builder
 ARG TFLINT_VERSION=0.64.0
 ARG TFLINT_COMMIT=15c65a33b322750f6131e286cd9597896299ba32
-ARG TFLINT_REKOR_VERSION=1.5.3
+ARG TFLINT_REKOR_VERSION=1.5.4
 WORKDIR /src/tflint
 RUN --mount=type=cache,id=tflint-go-mod,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,id=tflint-go-build,target=/root/.cache/go-build,sharing=locked \
@@ -62,7 +62,7 @@ RUN --mount=type=cache,id=terraform-docs-go-mod,target=/go/pkg/mod,sharing=locke
     && git remote add origin https://github.com/terraform-docs/terraform-docs.git \
     && git fetch --depth 1 origin "${TERRAFORM_DOCS_COMMIT}" \
     && git checkout --detach FETCH_HEAD \
-    && go get golang.org/x/crypto@v0.54.0 golang.org/x/net@v0.57.0 \
+    && go get golang.org/x/crypto@v0.56.0 golang.org/x/net@v0.58.0 \
     && go mod verify \
     && CGO_ENABLED=0 go build -trimpath \
       -ldflags="-s -w -X github.com/terraform-docs/terraform-docs/internal/version.commit=${TERRAFORM_DOCS_COMMIT}" \
@@ -70,8 +70,8 @@ RUN --mount=type=cache,id=terraform-docs-go-mod,target=/go/pkg/mod,sharing=locke
     && go-licenses report . > /terraform-docs-go-licenses.csv
 
 FROM go-tools-base AS terragrunt-builder
-ARG TERRAGRUNT_VERSION=1.1.1
-ARG TERRAGRUNT_COMMIT=19dcb749b4beea4a87e966927242ea93248b148e
+ARG TERRAGRUNT_VERSION=1.1.4
+ARG TERRAGRUNT_COMMIT=50598628d992d3790afc8596594af2468903f140
 WORKDIR /src/terragrunt
 RUN --mount=type=cache,id=terragrunt-go-mod,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,id=terragrunt-go-build,target=/root/.cache/go-build,sharing=locked \
@@ -85,22 +85,22 @@ RUN --mount=type=cache,id=terragrunt-go-mod,target=/go/pkg/mod,sharing=locked \
       -o /terragrunt . \
     && go-licenses report . > /terragrunt-go-licenses.csv
 
-FROM python:3.14-slim-trixie@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6
+FROM python:3.14-slim-trixie@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6
 
 ARG TARGETARCH
 ARG USERNAME=devuser
 ARG USER_UID=1000
 ARG USER_GID=1000
-ARG GH_VERSION=2.96.0
-ARG AWS_CLI_VERSION=2.36.8
-ARG NPM_VERSION=12.0.1
-ARG GH_SHA256_AMD64=83d5c2ccad5498f58bf6368acb1ab32588cf43ab3a4b1c301bf36328b1c8bd60
-ARG GH_SHA256_ARM64=06f86ec7103d41993b76cd78072f43595c34aaa56506d971d9860e67140bf909
-ARG AWS_CLI_SHA256_AMD64=829a2bbad5b4821a8d006a133c34fa5ce2f362ae003ac39aa0865a6d1e1711f2
-ARG AWS_CLI_SHA256_ARM64=fedb42aaa0f4e9623c626008139a0e4741cfa3f7ea3067c5a479390126e09f58
-ARG OH_MY_ZSH_COMMIT=b37dd49ca5bfe0d99b35607637152cb8cc8b29d7
+ARG GH_VERSION=2.100.0
+ARG AWS_CLI_VERSION=2.36.39
+ARG NPM_VERSION=12.0.2
+ARG GH_SHA256_AMD64=e4d4bb4498e8d007abe545b6568926793ace1b6447da598294a610018cb164be
+ARG GH_SHA256_ARM64=ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961
+ARG AWS_CLI_SHA256_AMD64=2b337174417c159f8fd825637841f5425308108bd6f99681664409fb0d7ebe01
+ARG AWS_CLI_SHA256_ARM64=9bdbc2e99d6abba9618130f29788137b93aa7cc29fbe0a76ad157c98c5ac7b99
+ARG OH_MY_ZSH_COMMIT=9112b53fa8b5ab556c7c893aa8be8a247ac512a0
 ARG ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
-ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=1d85c692615a25fe2293bdd44b34c217d5d2bf04
+ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=2fc57d63067c18b1100ecdbf684fa5baf49459d1
 
 ARG DEBIAN_FRONTEND=noninteractive
 
