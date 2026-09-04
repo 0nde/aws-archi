@@ -49,7 +49,7 @@ LICENSE_MARKERS = {
 DOCKER_PINS = (
     ("Dockerfile frontend", "docker/dockerfile:1.24", "docker/dockerfile"),
     ("Node.js base image", "node:24-trixie-slim", "library/node"),
-    ("Go builder image", "golang:1.26-trixie", "library/golang"),
+    ("Go builder image", "golang:1.27-trixie", "library/golang"),
     ("Python base image", "python:3.14-slim-trixie", "library/python"),
 )
 
