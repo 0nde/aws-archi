@@ -40,9 +40,9 @@ platformdirs==4.10.0 \
     --hash=sha256:31e761a6a0ca04faf7353ea759bdba55652be214725111e5aac52dfa29d4bef7 \
     --hash=sha256:fb516cdb12eb0d857d0cd85a7c57cea4d060bee4578d6cf5a14dfdf8cbf8784a
     # via pylint
-pylint==4.0.7 \
-    --hash=sha256:9b2d1d15791c84b77a4fe2aafe8f0d9570717e2dea06d53b19c105cf60275a52 \
-    --hash=sha256:be4a3111557a614411ed1fc89347ce4a8e1013a59e1f33d11485227a02e3304d
+pylint==4.0.8 \
+    --hash=sha256:1c1b2128bde5ff5e966801413080b6384d42a5782718d528c906dbb6beab94ed \
+    --hash=sha256:3341c08c0aabaa4adc71516de0969f3ba5c692b56c75af4dcb4d242823fbe363
     # via -r requirements-tools.in
 pyyaml==6.0.3 \
     --hash=sha256:00c4bdeba853cc34e7dd471f16b4114f4162dc03e6b7afcc2128711f0eca823c \
