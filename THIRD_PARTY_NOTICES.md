@@ -6,12 +6,12 @@ The Apache-2.0 license in `LICENSE` applies only to the source authored for this
 
 | Component | Version source | License | Bundled notice |
 | --- | --- | --- | --- |
-| Terraform | `.devcontainer/Dockerfile` | BUSL-1.1 | `third_party_licenses/terraform-1.15.8/LICENSE` |
+| Terraform | `.devcontainer/Dockerfile` | BUSL-1.1 | `third_party_licenses/terraform-1.16.1/LICENSE` |
 | TFLint | `.devcontainer/Dockerfile` | MPL-2.0 and BUSL-1.1 | `third_party_licenses/tflint-0.64.0/` |
-| Terragrunt | `.devcontainer/Dockerfile` | MIT | `third_party_licenses/terragrunt-1.1.1/LICENSE.txt` |
+| Terragrunt | `.devcontainer/Dockerfile` | MIT | `third_party_licenses/terragrunt-1.1.4/LICENSE.txt` |
 | terraform-docs | pinned source commit | MIT and dependency-specific terms | `third_party_licenses/terraform-docs-9d445519/LICENSE` |
-| GitHub CLI | `.devcontainer/Dockerfile` | MIT and dependency-specific terms | `third_party_licenses/github-cli-2.96.0/LICENSE` |
-| AWS CLI | `.devcontainer/Dockerfile` | Apache-2.0 and bundled third-party terms | `third_party_licenses/aws-cli-2.36.8/` |
+| GitHub CLI | `.devcontainer/Dockerfile` | MIT and dependency-specific terms | `third_party_licenses/github-cli-2.100.0/LICENSE` |
+| AWS CLI | `.devcontainer/Dockerfile` | Apache-2.0 and bundled third-party terms | `third_party_licenses/aws-cli-2.36.40/` |
 
 The container also preserves the license and notice files shipped with Python, pip, Node.js, npm, AWS CDK, cfn-lint, pylint, Oh My Zsh and its plugins. Dependency-level Go license reports for locally compiled tools are installed under `/usr/share/licenses/aws-archi/go-dependencies/`.
 

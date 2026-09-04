@@ -36,6 +36,8 @@ Dependabot manages supported GitHub Actions, npm and Python dependencies. The cu
 
 The updater must change only values it can validate together. New pin formats require updater tests before they are treated as automated. Runtime-generation changes—such as a new Debian release or a new Python, Go or Node.js major line—remain deliberate design decisions.
 
+The Go builder currently follows Go 1.27 because Terragrunt 1.1.4 requires it. This compiler is used only in build stages; the runtime remains Python 3.14 and Node.js 24 on Debian Trixie. When an upstream tool raises its minimum Go version, review its `go.mod`, then update the Dockerfile builder reference, its minimum-version check and `DOCKER_PINS` in `scripts/update-pins.py` together. Keep `GOTOOLCHAIN=local` so builds cannot silently download an unreviewed compiler.
+
 ## Reviewing an automated update
 
 Before merging:
