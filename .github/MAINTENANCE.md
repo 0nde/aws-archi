@@ -46,11 +46,23 @@ Before merging:
 
 1. Read the generated summary and upstream release notes.
 2. Confirm that versions, checksums, source commits and license notices changed together.
-3. Wait for the Actions analysis and both native architecture image validations.
-4. Inspect the critical-vulnerability gate for each architecture.
+3. Wait for the required CodeQL Actions and Python analyses and both native architecture image validations. The `Protect main` ruleset also requires CodeQL results, with errors and high-or-higher security alerts blocking merge.
+4. Inspect the critical-vulnerability gate and the complete vulnerability report for each architecture.
 5. Merge manually using squash only.
 
 The repository does not require the solo maintainer to approve their own pull request. If another person receives write access, enable at least one independent approval and CODEOWNERS enforcement before relying on collaborative auto-merge.
+
+### Dependency and security labels
+
+Dependabot and the pinned-tool updater apply `dependencies` to routine updates. The `security` label is reserved for a reviewed correction linked to a vulnerability alert, advisory or upstream security release. Maintainers apply it after checking that link; a new version alone does not establish a security fix. Dependabot security updates remain enabled independently of these labels. Labels do not authorize a merge or bypass any check.
+
+### Vulnerability reports
+
+Each native image validation and publication records every Trivy vulnerability severity, including findings without a reported fix. The job summary counts package findings by severity and whether a fixed version is available. The same vulnerability in two packages or targets counts twice.
+
+Download the full `trivy.json`, readable `trivy.txt` and `summary.md` from the job summary link or the workflow's artifacts. Artifacts are named `vulnerabilities-pr-amd64` / `vulnerabilities-pr-arm64` for pull requests and `vulnerabilities-published-amd64` / `vulnerabilities-published-arm64` for publication. They are retained for 30 days and uploaded before the blocking check, so a rejected image still has a report to inspect. Publication reports describe the exact staged image digest that is tested before promotion.
+
+The blocking policy remains fixable **CRITICAL** vulnerabilities. Other severities and findings without a fix remain visible for review; they are not silently accepted as harmless. A scanner or reporting failure fails validation instead of appearing as a clean report.
 
 ## Rebuilds and publication
 

@@ -129,7 +129,6 @@ jobs:
               --head "$BRANCH" \
               --title "chore: update pinned tools" \
               --body-file "$RUNNER_TEMP/pull-request.md" \
-              --label dependencies \
-              --label security
+              --label dependencies
           fi
           cat "$RUNNER_TEMP/pull-request.md" >> "$GITHUB_STEP_SUMMARY"
