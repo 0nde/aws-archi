@@ -46,17 +46,64 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
             cat "$RUNNER_TEMP/maintenance-summary.md" >> "$GITHUB_STEP_SUMMARY"
           fi
-      - name: Commit update branch
+      - name: Create a GitHub-signed maintenance commit
         if: steps.changes.outputs.changed == 'true'
         run: |
-          git config user.name "aws-archi maintenance"
-          git config user.email "3944130+0nde@users.noreply.github.com"
-          git switch -c "$BRANCH"
           git add .devcontainer/Dockerfile THIRD_PARTY_NOTICES.md third_party_licenses tooling/tool-versions.conf
           git diff --cached --check
-          git commit -m "chore: update pinned tools"
+
+          python - <<'PY' > "$RUNNER_TEMP/maintenance-commit.json"
+          import base64
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          def changed_paths(diff_filter):
+              result = subprocess.check_output([
+                  "git", "diff", "--cached", "--name-only", "--no-renames",
+                  f"--diff-filter={diff_filter}", "-z",
+              ])
+              return [os.fsdecode(path) for path in result.split(b"\0") if path]
+
+          additions = [
+              {"path": path, "contents": base64.b64encode(Path(path).read_bytes()).decode("ascii")}
+              for path in changed_paths("AMT")
+          ]
+          deletions = [{"path": path} for path in changed_paths("D")]
+          query = """mutation($input: CreateCommitOnBranchInput!) {
+              createCommitOnBranch(input: $input) { commit { oid } }
+          }"""
+          print(json.dumps({
+              "query": query,
+              "variables": {"input": {
+                  "branch": {
+                      "repositoryNameWithOwner": os.environ["GITHUB_REPOSITORY"],
+                      "branchName": f"refs/heads/{os.environ['BRANCH']}",
+                  },
+                  "expectedHeadOid": os.environ["GITHUB_SHA"],
+                  "message": {"headline": "chore: update pinned tools"},
+                  "fileChanges": {"additions": additions, "deletions": deletions},
+              }},
+          }))
+          PY
+
           gh auth setup-git
-          git push --force --set-upstream origin "$BRANCH"
+          remote_sha=$(git ls-remote --heads origin "$BRANCH" | awk '{print $1}')
+          git push --force-with-lease="refs/heads/${BRANCH}:${remote_sha}" \
+            origin "${GITHUB_SHA}:refs/heads/${BRANCH}"
+          commit_sha=$(gh api graphql --input "$RUNNER_TEMP/maintenance-commit.json" \
+            --jq '.data.createCommitOnBranch.commit.oid')
+          [[ "$commit_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "GitHub did not create the maintenance commit" >&2
+            exit 1
+          }
+          verified=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${commit_sha}" \
+            --jq '.commit.verification.verified')
+          [ "$verified" = "true" ] || {
+            echo "GitHub did not sign the maintenance commit" >&2
+            exit 1
+          }
       - name: Open or refresh maintenance pull request
         if: steps.changes.outputs.changed == 'true'
         run: |
