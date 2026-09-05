@@ -52,6 +52,8 @@ jobs:
           git add .devcontainer/Dockerfile THIRD_PARTY_NOTICES.md third_party_licenses tooling/tool-versions.conf
           git diff --cached --check
 
+          export STAGING_BRANCH="bot/pinned-tool-staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
           python - <<'PY' > "$RUNNER_TEMP/maintenance-commit.json"
           import base64
           import json
@@ -79,7 +81,7 @@ jobs:
               "variables": {"input": {
                   "branch": {
                       "repositoryNameWithOwner": os.environ["GITHUB_REPOSITORY"],
-                      "branchName": f"refs/heads/{os.environ['BRANCH']}",
+                      "branchName": f"refs/heads/{os.environ['STAGING_BRANCH']}",
                   },
                   "expectedHeadOid": os.environ["GITHUB_SHA"],
                   "message": {"headline": "chore: update pinned tools"},
@@ -90,8 +92,9 @@ jobs:
 
           gh auth setup-git
           remote_sha=$(git ls-remote --heads origin "$BRANCH" | awk '{print $1}')
-          git push --force-with-lease="refs/heads/${BRANCH}:${remote_sha}" \
-            origin "${GITHUB_SHA}:refs/heads/${BRANCH}"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f "ref=refs/heads/${STAGING_BRANCH}" -f "sha=${GITHUB_SHA}" >/dev/null
+          trap 'gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${STAGING_BRANCH}" >/dev/null' EXIT
           commit_sha=$(gh api graphql --input "$RUNNER_TEMP/maintenance-commit.json" \
             --jq '.data.createCommitOnBranch.commit.oid')
           [[ "$commit_sha" =~ ^[0-9a-f]{40}$ ]] || {
@@ -104,6 +107,9 @@ jobs:
             echo "GitHub did not sign the maintenance commit" >&2
             exit 1
           }
+          git fetch --depth=1 origin "$commit_sha"
+          git push --force-with-lease="refs/heads/${BRANCH}:${remote_sha}" \
+            origin "${commit_sha}:refs/heads/${BRANCH}"
       - name: Open or refresh maintenance pull request
         if: steps.changes.outputs.changed == 'true'
         run: |
