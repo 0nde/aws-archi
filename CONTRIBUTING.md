@@ -25,7 +25,9 @@ Run the updater tests independently:
 PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-GitHub Actions validates `linux/amd64` and `linux/arm64` on native runners. Workflows from external forks require maintainer approval before they can access runner resources. Local cross-architecture builds may use emulation and are not required from contributors.
+GitHub Actions validates `linux/amd64` and `linux/arm64` on native runners. Both image validations and the CodeQL Actions and Python analyses are required before merge. Each image job links to a complete vulnerability report; the image gate blocks critical vulnerabilities with an available fix, while other findings remain visible for review. CodeQL merge protection also blocks errors and high-or-higher security alerts.
+
+Workflows from external forks require maintainer approval before they can access runner resources. Local cross-architecture builds may use emulation and are not required from contributors.
 
 ## Pull requests
 

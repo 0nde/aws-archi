@@ -6,6 +6,7 @@ on:
     tags: ["v*"]
     paths:
       - ".github/workflows/image.yml"
+      - ".github/actions/image-security/**"
       - ".devcontainer/Dockerfile"
       - ".dockerignore"
       - "scripts/**"
@@ -69,15 +70,12 @@ jobs:
           no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
       - name: Verify tools and runtime defaults
         run: docker run --rm -v "$PWD/scripts:/tests:ro" aws-archi:test bash /tests/verify-tools.sh
-      - name: Block fixable critical vulnerabilities
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      - name: Report vulnerabilities and enforce the security gate
+        uses: ./.github/actions/image-security
         with:
-          scan-type: image
           image-ref: aws-archi:test
-          format: table
-          severity: CRITICAL
-          ignore-unfixed: true
-          exit-code: 1
+          platform: ${{ matrix.platform }}
+          artifact-name: vulnerabilities-pr-${{ matrix.arch }}
 
   publish-platform:
     name: Build, validate and stage platform (${{ matrix.arch }})
@@ -152,15 +150,12 @@ jobs:
           docker run --rm --platform "$PLATFORM" \
             -v "$PWD/scripts:/tests:ro" \
             "$ref" bash /tests/verify-tools.sh
-      - name: Block fixable critical vulnerabilities in the staged image
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      - name: Report staged image vulnerabilities and enforce the security gate
+        uses: ./.github/actions/image-security
         with:
-          scan-type: image
           image-ref: ${{ env.IMAGE_GHCR }}@${{ steps.build.outputs.digest }}
-          format: table
-          severity: CRITICAL
-          ignore-unfixed: true
-          exit-code: 1
+          platform: ${{ matrix.platform }}
+          artifact-name: vulnerabilities-published-${{ matrix.arch }}
       - name: Export platform digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}

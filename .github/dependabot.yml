@@ -6,7 +6,6 @@ updates:
       interval: weekly
     labels:
       - dependencies
-      - security
 
   - package-ecosystem: npm
     directory: /tooling/node
@@ -14,7 +13,6 @@ updates:
       interval: weekly
     labels:
       - dependencies
-      - security
 
   - package-ecosystem: pip
     directory: /tooling/python
@@ -22,4 +20,3 @@ updates:
       interval: weekly
     labels:
       - dependencies
-      - security

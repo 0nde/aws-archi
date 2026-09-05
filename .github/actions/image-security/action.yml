@@ -1,0 +1,66 @@
+name: Image security report and gate
+description: Preserve a complete vulnerability report before enforcing the critical-fix gate.
+
+inputs:
+  image-ref:
+    description: Exact local image or staged image digest to scan
+    required: true
+  platform:
+    description: Native platform being validated
+    required: true
+  artifact-name:
+    description: Unique report artifact name for this job
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare report directory
+      shell: bash
+      run: mkdir -p "$RUNNER_TEMP/image-security"
+    - name: Scan all vulnerability severities
+      id: report
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      with:
+        scan-type: image
+        image-ref: ${{ inputs.image-ref }}
+        scanners: vuln
+        format: json
+        output: ${{ runner.temp }}/image-security/trivy.json
+        severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+        ignore-unfixed: false
+        exit-code: 0
+    - name: Render readable vulnerability reports
+      shell: bash
+      env:
+        PLATFORM: ${{ inputs.platform }}
+      run: |
+        trivy convert --format table --output "$RUNNER_TEMP/image-security/trivy.txt" \
+          "$RUNNER_TEMP/image-security/trivy.json"
+        python scripts/summarize_vulnerabilities.py "$RUNNER_TEMP/image-security/trivy.json" \
+          --platform "$PLATFORM" > "$RUNNER_TEMP/image-security/summary.md"
+        cat "$RUNNER_TEMP/image-security/summary.md" >> "$GITHUB_STEP_SUMMARY"
+    - name: Preserve full vulnerability reports
+      id: artifact
+      if: ${{ !cancelled() && steps.report.outcome == 'success' }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/image-security/
+        if-no-files-found: error
+        retention-days: 30
+    - name: Link full reports from the job summary
+      shell: bash
+      env:
+        ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+      run: printf '\n[Download the complete JSON and text reports](%s). Retained for 30 days.\n' "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+    - name: Block fixable critical vulnerabilities
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      with:
+        scan-type: image
+        image-ref: ${{ inputs.image-ref }}
+        skip-setup-trivy: true
+        format: table
+        severity: CRITICAL
+        ignore-unfixed: true
+        exit-code: 1
