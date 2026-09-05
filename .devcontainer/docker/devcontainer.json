@@ -1,6 +1,6 @@
 {
   "name": "AWS Architecture with Docker",
-  "image": "ghcr.io/0nde/aws-archi@sha256:c16910891baac85268842e158b7f0d26bf3ba3440477bd9eeab993c3bfa22953",
+  "image": "ghcr.io/0nde/aws-archi@sha256:790542aa49a896a34afda361764fe348ecc43bdf5beff985ef828535868dec81",
   "remoteUser": "devuser",
   "init": true,
   "features": {
