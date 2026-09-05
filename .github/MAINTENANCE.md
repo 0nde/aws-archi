@@ -2,6 +2,8 @@
 
 Scheduled maintenance and Dependabot propose narrowly scoped pull requests for dependencies and reviewed build pins. They never push to `main`, enable auto-merge, create a release, move a release tag or silently change the Dev Container's pinned digest.
 
+The pinned-tool workflow creates its commits through GitHub's `createCommitOnBranch` API and verifies their signatures before opening or refreshing a pull request. This satisfies the signed-commit requirement on `main`. The signed commit is prepared on a temporary branch, then the bot branch is updated with an explicit lease so a concurrent branch update is not overwritten. The temporary branch is removed afterward; the open pull request keeps its review history throughout the refresh.
+
 Maintenance and releases are intentionally separate:
 
 - maintenance keeps the source and rolling image current;
