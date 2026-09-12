@@ -4,9 +4,9 @@ astroid==4.0.4 \
     --hash=sha256:52f39653876c7dec3e3afd4c2696920e05c83832b9737afc21928f2d2eb7a753 \
     --hash=sha256:986fed8bcf79fb82c78b18a53352a0b287a73817d6dbcfba3162da36667c49a0
     # via pylint
-cfn-lint==1.56.0 \
-    --hash=sha256:28d5ef9a4b2c91d919ab6a9c973a328b52332a1aef63a4c1d99057228e7f9adf \
-    --hash=sha256:e3a67b547527a999a5bfa54e5c47920425322cbb625ea2e6447ca51f6fa7173d
+cfn-lint==1.56.1 \
+    --hash=sha256:93101bca2ea2c1a3931a0b391a4c2bd646dc3cde0a60b6ef1e7177c8e993ef48 \
+    --hash=sha256:cf31b560ca71e3084b8ed3a573f7a7edd0b98a5517b71d15035ae172de9b2e78
     # via -r requirements-tools.in
 dill==0.4.1 \
     --hash=sha256:1e1ce33e978ae97fcfcff5638477032b801c46c7c65cf717f95fbc2248f79a9d \
