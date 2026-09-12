@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.24@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
-FROM node:24-trixie-slim@sha256:50c3b2f6988dfc307b86e5301d69611af31f4789bdf232863b07d3b02fe55ae0 AS node
+FROM node:24-trixie-slim@sha256:6950b66b4c0cb0151ce89fa75074673850763d096b044f422c6729b588dd4956 AS node
 
 FROM golang:1.27-trixie@sha256:9baa6b4187bbb98d240372a8a235ac0bb6b5ddd52bba1431dc2f7c0705862728 AS go-tools-base
 ARG GO_LICENSES_VERSION=2.0.1
@@ -10,8 +10,8 @@ RUN --mount=type=cache,id=go-licenses-mod,target=/go/pkg/mod,sharing=locked \
     GOBIN=/usr/local/bin go install "github.com/google/go-licenses/v2@v${GO_LICENSES_VERSION}"
 
 FROM go-tools-base AS terraform-builder
-ARG TERRAFORM_VERSION=1.16.1
-ARG TERRAFORM_COMMIT=58e916f6706597d9d87898f9ecedf811b68c6f29
+ARG TERRAFORM_VERSION=1.16.2
+ARG TERRAFORM_COMMIT=82e042fb6372443813f6759056308d6adc642fa1
 WORKDIR /src/terraform
 RUN --mount=type=cache,id=terraform-go-mod,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,id=terraform-go-build,target=/root/.cache/go-build,sharing=locked \
@@ -62,7 +62,7 @@ RUN --mount=type=cache,id=terraform-docs-go-mod,target=/go/pkg/mod,sharing=locke
     && git remote add origin https://github.com/terraform-docs/terraform-docs.git \
     && git fetch --depth 1 origin "${TERRAFORM_DOCS_COMMIT}" \
     && git checkout --detach FETCH_HEAD \
-    && go get golang.org/x/crypto@v0.56.0 golang.org/x/net@v0.58.0 \
+    && go get golang.org/x/crypto@v0.57.0 golang.org/x/net@v0.59.0 \
     && go mod verify \
     && CGO_ENABLED=0 go build -trimpath \
       -ldflags="-s -w -X github.com/terraform-docs/terraform-docs/internal/version.commit=${TERRAFORM_DOCS_COMMIT}" \
@@ -92,13 +92,13 @@ ARG USERNAME=devuser
 ARG USER_UID=1000
 ARG USER_GID=1000
 ARG GH_VERSION=2.100.0
-ARG AWS_CLI_VERSION=2.36.40
+ARG AWS_CLI_VERSION=2.36.44
 ARG NPM_VERSION=12.0.2
 ARG GH_SHA256_AMD64=e4d4bb4498e8d007abe545b6568926793ace1b6447da598294a610018cb164be
 ARG GH_SHA256_ARM64=ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961
-ARG AWS_CLI_SHA256_AMD64=a904e314340ad4c4b62beb50e9259d4becb2acf3dffc86c96c553c834d7fdf7a
-ARG AWS_CLI_SHA256_ARM64=f26e08d0d64d9f35f304a9df94d63cbd11ffe8881c8b4bf60be934cf9e4d13a9
-ARG OH_MY_ZSH_COMMIT=421d95782d369f266b8087a0eae11eac2f6a6041
+ARG AWS_CLI_SHA256_AMD64=617845f42577b8c1deba29eb5195ced529ee98241ccf4dad922745a287722af4
+ARG AWS_CLI_SHA256_ARM64=42092fbf9459b4716807ffc9ffeab0a616b5eff0ceed2d59a16f977ad0d7608e
+ARG OH_MY_ZSH_COMMIT=be8da5c77192eb3da3699ea7c5e47bdfaa5eea4e
 ARG ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
 ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=2fc57d63067c18b1100ecdbf684fa5baf49459d1
 
