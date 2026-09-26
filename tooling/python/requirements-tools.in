@@ -1,2 +1,2 @@
-cfn-lint==1.56.0
+cfn-lint==1.57.0
 pylint==4.0.8
