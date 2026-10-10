@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.24@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
-FROM node:24-trixie-slim@sha256:50c3b2f6988dfc307b86e5301d69611af31f4789bdf232863b07d3b02fe55ae0 AS node
+FROM node:24-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS node
 
-FROM golang:1.27-trixie@sha256:9baa6b4187bbb98d240372a8a235ac0bb6b5ddd52bba1431dc2f7c0705862728 AS go-tools-base
+FROM golang:1.27-trixie@sha256:2f84bc93ecfb2689f782b153fdcd368b5a7ab96c1386c65cdaccf35e726d6a44 AS go-tools-base
 ARG GO_LICENSES_VERSION=2.0.1
 ENV GOTOOLCHAIN=local
 RUN test "$(printf '%s\n' go1.27.1 "$(go env GOVERSION)" | sort -V | head -n1)" = go1.27.1
@@ -10,8 +10,8 @@ RUN --mount=type=cache,id=go-licenses-mod,target=/go/pkg/mod,sharing=locked \
     GOBIN=/usr/local/bin go install "github.com/google/go-licenses/v2@v${GO_LICENSES_VERSION}"
 
 FROM go-tools-base AS terraform-builder
-ARG TERRAFORM_VERSION=1.16.1
-ARG TERRAFORM_COMMIT=58e916f6706597d9d87898f9ecedf811b68c6f29
+ARG TERRAFORM_VERSION=1.16.5
+ARG TERRAFORM_COMMIT=ef47237fd0e03d6e93bdc510b526287f06e94c03
 WORKDIR /src/terraform
 RUN --mount=type=cache,id=terraform-go-mod,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,id=terraform-go-build,target=/root/.cache/go-build,sharing=locked \
@@ -62,7 +62,7 @@ RUN --mount=type=cache,id=terraform-docs-go-mod,target=/go/pkg/mod,sharing=locke
     && git remote add origin https://github.com/terraform-docs/terraform-docs.git \
     && git fetch --depth 1 origin "${TERRAFORM_DOCS_COMMIT}" \
     && git checkout --detach FETCH_HEAD \
-    && go get golang.org/x/crypto@v0.56.0 golang.org/x/net@v0.58.0 \
+    && go get golang.org/x/crypto@v0.58.0 golang.org/x/net@v0.61.0 \
     && go mod verify \
     && CGO_ENABLED=0 go build -trimpath \
       -ldflags="-s -w -X github.com/terraform-docs/terraform-docs/internal/version.commit=${TERRAFORM_DOCS_COMMIT}" \
@@ -70,8 +70,8 @@ RUN --mount=type=cache,id=terraform-docs-go-mod,target=/go/pkg/mod,sharing=locke
     && go-licenses report . > /terraform-docs-go-licenses.csv
 
 FROM go-tools-base AS terragrunt-builder
-ARG TERRAGRUNT_VERSION=1.1.4
-ARG TERRAGRUNT_COMMIT=50598628d992d3790afc8596594af2468903f140
+ARG TERRAGRUNT_VERSION=1.1.6
+ARG TERRAGRUNT_COMMIT=be24121b42597ca0ba9b311e76961927b91a5b30
 WORKDIR /src/terragrunt
 RUN --mount=type=cache,id=terragrunt-go-mod,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,id=terragrunt-go-build,target=/root/.cache/go-build,sharing=locked \
@@ -85,22 +85,22 @@ RUN --mount=type=cache,id=terragrunt-go-mod,target=/go/pkg/mod,sharing=locked \
       -o /terragrunt . \
     && go-licenses report . > /terragrunt-go-licenses.csv
 
-FROM python:3.14-slim-trixie@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6
+FROM python:3.14-slim-trixie@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
 
 ARG TARGETARCH
 ARG USERNAME=devuser
 ARG USER_UID=1000
 ARG USER_GID=1000
-ARG GH_VERSION=2.100.0
-ARG AWS_CLI_VERSION=2.36.40
-ARG NPM_VERSION=12.0.2
-ARG GH_SHA256_AMD64=e4d4bb4498e8d007abe545b6568926793ace1b6447da598294a610018cb164be
-ARG GH_SHA256_ARM64=ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961
-ARG AWS_CLI_SHA256_AMD64=a904e314340ad4c4b62beb50e9259d4becb2acf3dffc86c96c553c834d7fdf7a
-ARG AWS_CLI_SHA256_ARM64=f26e08d0d64d9f35f304a9df94d63cbd11ffe8881c8b4bf60be934cf9e4d13a9
-ARG OH_MY_ZSH_COMMIT=421d95782d369f266b8087a0eae11eac2f6a6041
+ARG GH_VERSION=2.102.0
+ARG AWS_CLI_VERSION=2.37.12
+ARG NPM_VERSION=12.2.0
+ARG GH_SHA256_AMD64=bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386
+ARG GH_SHA256_ARM64=7862c86c72f43df3a2d93ddde6f473285b4e2af61b494849846827e513ef6484
+ARG AWS_CLI_SHA256_AMD64=e6d3c672fb36ed4b12c354c39a993eee2b34da1437cafb10bac4480840cfa83f
+ARG AWS_CLI_SHA256_ARM64=829c76096e05f743267d75098bc7cc7cfae799fc7e568554ebaa6d78e6aba753
+ARG OH_MY_ZSH_COMMIT=42a4ccb1b14dbeffe81259105a5243b4f4cb618e
 ARG ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
-ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=2fc57d63067c18b1100ecdbf684fa5baf49459d1
+ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=e6683f20e5c38d3e5447f45845d04ddda75d0f23
 
 ARG DEBIAN_FRONTEND=noninteractive
 
