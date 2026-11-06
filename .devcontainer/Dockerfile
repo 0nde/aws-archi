@@ -140,7 +140,10 @@ ARG RUNTIME_REFRESH=stable
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     test -n "${RUNTIME_REFRESH}" \
-    && apt-get update && apt-get install -y --no-install-recommends \
+    && sed -i 's|^URIs: http://deb.debian.org/|URIs: https://deb.debian.org/|' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
       bash-completion ca-certificates curl git jq less openssh-client procps \
       shellcheck sudo unzip zsh \
     && groupadd --gid "${USER_GID}" "${USERNAME}" \
@@ -171,7 +174,7 @@ COPY tooling/node/package.json tooling/node/package-lock.json /opt/aws-cdk/
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     --mount=type=cache,target=/root/.npm,sharing=locked \
     python -m pip install --require-hashes -r /tmp/requirements-tools.txt \
-    && npm install --global "npm@${NPM_VERSION}" \
+    && npm install --global --ignore-scripts "npm@${NPM_VERSION}" \
     && npm ci --prefix /opt/aws-cdk --omit=dev --ignore-scripts \
     && ln -s /opt/aws-cdk/node_modules/.bin/cdk /usr/local/bin/cdk \
     && rm -rf /tmp/*
