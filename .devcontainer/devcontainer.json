@@ -1,6 +1,6 @@
 {
   "name": "AWS Architecture Dev",
-  "image": "ghcr.io/0nde/aws-archi@sha256:790542aa49a896a34afda361764fe348ecc43bdf5beff985ef828535868dec81",
+  "image": "ghcr.io/0nde/aws-archi@sha256:e9c296c54f8edd7dd8f6ef6551c378861ad2bb22241e23a0ce910bbec73a6802",
   "remoteUser": "devuser",
   "init": true,
   "mounts": [
