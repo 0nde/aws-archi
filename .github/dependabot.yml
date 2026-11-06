@@ -6,6 +6,10 @@ updates:
       interval: weekly
     labels:
       - dependencies
+    groups:
+      codeql:
+        patterns:
+          - "github/codeql-action*"
 
   - package-ecosystem: npm
     directory: /tooling/node

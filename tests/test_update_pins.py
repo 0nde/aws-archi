@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 import io
 import importlib.util
 import shutil
 import tempfile
 import unittest
 import urllib.error
+import urllib.request
 import zipfile
 from pathlib import Path
 from unittest import mock
@@ -191,6 +193,50 @@ class UpdatePinsTests(unittest.TestCase):
         self.assertIsNone(npm_request.get_header("Authorization"))
         self.assertEqual("application/vnd.github+json", github_request.get_header("Accept"))
         self.assertEqual("Bearer github-token", github_request.get_header("Authorization"))
+        redirected = urllib.request.HTTPRedirectHandler().redirect_request(
+            github_request, None, 302, "Found", {}, "https://example.test/"
+        )
+        self.assertIsNone(redirected.get_header("Authorization"))
+
+    def test_github_release_rejects_tags_with_shell_or_url_syntax(self):
+        for tag in ("v3.1.3#$(id)", "v3.1.3/other", "v3.1.3-rc.1", None):
+            with (
+                self.subTest(tag=tag),
+                mock.patch.object(UPDATE_PINS, "api", return_value={"tag_name": tag}) as api,
+                self.assertRaisesRegex(RuntimeError, "Expected a stable vX.Y.Z release tag"),
+            ):
+                UPDATE_PINS.github_release("sigstore/cosign")
+            api.assert_called_once_with("https://api.github.com/repos/sigstore/cosign/releases/latest")
+
+    def test_read_cosign_version_rejects_shell_syntax_without_updating(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            versions = Path(temporary) / "tool-versions.conf"
+            with (
+                mock.patch.object(UPDATE_PINS, "TOOL_VERSIONS", versions),
+                mock.patch.object(UPDATE_PINS, "update") as update,
+                mock.patch("sys.argv", ["update-pins.py", "--read-cosign-version"]),
+            ):
+                stdout = io.StringIO()
+                versions.write_text("COSIGN_VERSION=3.1.3\n", encoding="utf-8")
+                with contextlib.redirect_stdout(stdout):
+                    self.assertEqual(0, UPDATE_PINS.main())
+                self.assertEqual("3.1.3\n", stdout.getvalue())
+
+                for content in ("COSIGN_VERSION=3.1.3#$(id)\n", "COSIGN_VERSION=3.1.3\nid\n"):
+                    with self.subTest(content=content):
+                        versions.write_text(content, encoding="utf-8")
+                        stdout = io.StringIO()
+                        stderr = io.StringIO()
+                        with (
+                            contextlib.redirect_stdout(stdout),
+                            contextlib.redirect_stderr(stderr),
+                            self.assertRaises(SystemExit) as error,
+                        ):
+                            UPDATE_PINS.main()
+                        self.assertEqual(1, error.exception.code)
+                        self.assertEqual("", stdout.getvalue())
+                        self.assertIn("Expected a single stable version pin", stderr.getvalue())
+                update.assert_not_called()
 
     def test_request_retries_a_transient_server_failure(self):
         failure = urllib.error.HTTPError(

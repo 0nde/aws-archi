@@ -47,7 +47,7 @@ test "$(id -un)" = "devuser"
 sudo -n true
 python -m pip check
 npm list --prefix /opt/aws-cdk --omit=dev >/dev/null
-! npm list --global --depth=0 cdk-nag >/dev/null 2>&1
+npm list --global --depth=0 --json | jq -e '(.dependencies // {}) | has("cdk-nag") | not' >/dev/null
 
 mapfile -t terraform_licenses < <(
   find /usr/share/licenses/aws-archi/third_party \

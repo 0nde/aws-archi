@@ -1,13 +1,18 @@
+import os
 import unittest
+from unittest.mock import patch
 
 from scripts.verify_release_candidate import (
     EXPECTED_DESCRIPTION,
     VerificationError,
+    main,
+    parse_args,
     resolve_tag_metadata,
     validate_attestations,
     validate_image_metadata,
     validate_manifest,
     validate_version,
+    verify_signed_release_tag,
 )
 
 
@@ -16,6 +21,47 @@ DIGEST = "sha256:" + "b" * 64
 
 
 class ReleaseCandidateValidationTests(unittest.TestCase):
+    def test_verifies_the_signed_tag_on_main(self):
+        ref = {"object": {"type": "tag", "sha": "c" * 40}}
+        tag = {
+            "tag": "v1.2.3",
+            "verification": {"verified": True},
+            "object": {"type": "commit", "sha": COMMIT},
+        }
+        with (
+            patch("scripts.verify_release_candidate.run_json", side_effect=[ref, tag]),
+            patch("scripts.verify_release_candidate.run") as run,
+        ):
+            self.assertEqual(verify_signed_release_tag("1.2.3", "owner/repo"), ("v1.2.3", COMMIT))
+            run.assert_called_once_with(["git", "merge-base", "--is-ancestor", COMMIT, "origin/main"])
+
+    def test_source_only_binds_the_signed_tag_to_the_push(self):
+        argv = ["--source-only", "--version", "1.2.3", "--repository", "owner/repo", "--expected-commit", COMMIT]
+        for ref, event_sha, tag_commit, status in (
+            ("refs/tags/v1.2.3", COMMIT, COMMIT, 0),
+            ("refs/heads/v1.2.3", COMMIT, COMMIT, 1),
+            ("refs/tags/v1.2.4", COMMIT, COMMIT, 1),
+            ("refs/tags/v1.2.3", "b" * 40, COMMIT, 1),
+            ("refs/tags/v1.2.3", COMMIT, "b" * 40, 1),
+        ):
+            with (
+                self.subTest(ref=ref, event_sha=event_sha, tag_commit=tag_commit),
+                patch.dict(os.environ, {"GH_TOKEN": "test", "GITHUB_REF": ref, "GITHUB_SHA": event_sha}),
+                patch("scripts.verify_release_candidate.sys.argv", ["verify-release", *argv]),
+                patch("scripts.verify_release_candidate.verify_signed_release_tag", return_value=("v1.2.3", tag_commit)),
+                patch("scripts.verify_release_candidate.verify_release_candidate") as verify_image,
+                patch("builtins.print"),
+            ):
+                self.assertEqual(main(), status)
+                verify_image.assert_not_called()
+
+    def test_source_only_requires_a_commit_and_rejects_image_options(self):
+        argv = ["--source-only", "--version", "1.2.3", "--repository", "owner/repo"]
+        for extras in ([], ["--expected-commit", "main"], ["--expected-commit", COMMIT, "--github-env", "env"]):
+            with self.subTest(extras=extras), patch("argparse.ArgumentParser.error", side_effect=SystemExit(2)):
+                with self.assertRaises(SystemExit):
+                    parse_args(argv + extras)
+
     def test_accepts_a_signed_annotated_tag(self):
         ref = {"object": {"type": "tag", "sha": "c" * 40}}
         tag = {
