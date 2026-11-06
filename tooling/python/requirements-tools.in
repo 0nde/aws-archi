@@ -1,4 +1,4 @@
-cfn-lint==1.58.0
+cfn-lint==1.59.0
 pylint==4.1.3
 
 # Pin pip to pick up fixes in its vendored certifi, msgpack and urllib3.
