@@ -219,16 +219,16 @@ def verify_registry(
     )
 
 
-def verify_release_candidate(
-    version: str,
-    repository: str,
-    canonical_image: str,
-    mirror_image: str,
-) -> tuple[str, str, str]:
-    """Verify and bind the complete release candidate across both registries."""
+def verify_signed_release_tag(version: str, repository: str) -> tuple[str, str]:
+    """Verify the signed tag and its ancestry on origin/main."""
     tag = validate_version(version)
     ref = run_json(["gh", "api", f"repos/{repository}/git/ref/tags/{tag}"])
-    tag_sha = ref.get("object", {}).get("sha") if isinstance(ref, dict) else None
+    ref_object = ref.get("object") if isinstance(ref, dict) else None
+    require(
+        isinstance(ref_object, dict) and ref_object.get("type") == "tag",
+        f"{tag} must be an annotated, signed tag",
+    )
+    tag_sha = ref_object.get("sha")
     require(
         isinstance(tag_sha, str) and COMMIT_RE.fullmatch(tag_sha) is not None,
         "Annotated tag object is invalid",
@@ -237,6 +237,17 @@ def verify_release_candidate(
     commit = resolve_tag_metadata(ref, tag_object, tag)
 
     run(["git", "merge-base", "--is-ancestor", commit, "origin/main"])
+    return tag, commit
+
+
+def verify_release_candidate(
+    version: str,
+    repository: str,
+    canonical_image: str,
+    mirror_image: str,
+) -> tuple[str, str, str]:
+    """Verify and bind the complete release candidate across both registries."""
+    tag, commit = verify_signed_release_tag(version, repository)
 
     canonical_manifest = inspect(f"{canonical_image}:{version}", "{{json .Manifest}}")
     digest = validate_manifest(canonical_manifest)
@@ -251,22 +262,51 @@ def verify_release_candidate(
     return tag, commit, digest
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse the workflow-facing command-line interface."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
     parser.add_argument("--repository", required=True)
-    parser.add_argument("--canonical-image", required=True)
-    parser.add_argument("--mirror-image", required=True)
-    parser.add_argument("--github-env", type=Path, required=True)
-    return parser.parse_args()
+    parser.add_argument("--source-only", action="store_true")
+    parser.add_argument("--expected-commit")
+    parser.add_argument("--canonical-image")
+    parser.add_argument("--mirror-image")
+    parser.add_argument("--github-env", type=Path)
+    args = parser.parse_args(argv)
+    image_options = (args.canonical_image, args.mirror_image, args.github_env)
+    if args.source_only:
+        if not args.expected_commit or not COMMIT_RE.fullmatch(args.expected_commit):
+            parser.error("--source-only requires --expected-commit with a 40-character Git SHA")
+        if any(value is not None for value in image_options):
+            parser.error("--source-only cannot be combined with image or environment options")
+    elif args.expected_commit is not None or not all(image_options):
+        parser.error(
+            "Image verification requires --canonical-image, --mirror-image, and --github-env, "
+            "and does not accept --expected-commit"
+        )
+    return args
 
 
 def main() -> int:
     """Verify a candidate and export its immutable release metadata."""
     args = parse_args()
     try:
-        require(bool(os.environ.get("GH_TOKEN")), "MAINTENANCE_TOKEN is missing")
+        require(bool(os.environ.get("GH_TOKEN")), "GH_TOKEN is missing")
+        if args.source_only:
+            tag = validate_version(args.version)
+            require(
+                os.environ.get("GITHUB_REF") == f"refs/tags/{tag}",
+                "GitHub ref does not match the release tag",
+            )
+            require(
+                os.environ.get("GITHUB_SHA") == args.expected_commit,
+                "Expected commit does not match the GitHub event SHA",
+            )
+            tag, commit = verify_signed_release_tag(args.version, args.repository)
+            require(commit == args.expected_commit, "Signed tag commit does not match the GitHub event SHA")
+            print(f"Verified source for {tag} ({commit})")
+            return 0
+
         tag, commit, digest = verify_release_candidate(
             args.version,
             args.repository,

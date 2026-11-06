@@ -29,6 +29,7 @@ LICENSES = ROOT / "third_party_licenses"
 TOOL_VERSIONS = ROOT / "tooling" / "tool-versions.conf"
 USER_AGENT = "aws-archi-maintenance/1.0"
 REQUEST_ATTEMPTS = 4
+STABLE_VERSION = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
 DOCKER_MANIFEST_ACCEPT = ", ".join(
     (
         "application/vnd.oci.image.index.v1+json",
@@ -78,13 +79,13 @@ def urlopen_with_retry(request_or_url, *, timeout: int = 120):
 
 
 def request(url: str) -> bytes:
-    headers = {"User-Agent": USER_AGENT}
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    http_request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     if url.startswith("https://api.github.com/"):
-        headers["Accept"] = "application/vnd.github+json"
+        http_request.add_header("Accept", "application/vnd.github+json")
+        token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
         if token:
-            headers["Authorization"] = f"Bearer {token}"
-    with urlopen_with_retry(urllib.request.Request(url, headers=headers)) as response:
+            http_request.add_unredirected_header("Authorization", f"Bearer {token}")
+    with urlopen_with_retry(http_request) as response:
         return response.read()
 
 
@@ -145,9 +146,9 @@ def set_arg(content: str, name: str, value: str) -> str:
 
 
 def env_version(content: str, name: str) -> str:
-    match = re.search(rf"^{re.escape(name)}=(.+)$", content, re.MULTILINE)
+    match = re.fullmatch(rf"{re.escape(name)}=({STABLE_VERSION})\n?", content)
     if not match:
-        raise RuntimeError(f"Missing version pin {name}")
+        raise RuntimeError(f"Expected a single stable version pin for {name}")
     return match.group(1)
 
 
@@ -158,6 +159,8 @@ def set_env_version(content: str, name: str, value: str) -> str:
 def github_release(repository: str) -> tuple[str, str, dict[str, str]]:
     release = api(f"https://api.github.com/repos/{repository}/releases/latest")
     tag = release["tag_name"]
+    if not isinstance(tag, str) or re.fullmatch(rf"v{STABLE_VERSION}", tag) is None:
+        raise RuntimeError(f"Expected a stable vX.Y.Z release tag for {repository}")
     commit = api(f"https://api.github.com/repos/{repository}/commits/{tag}")["sha"]
     assets = {asset["name"]: asset["browser_download_url"] for asset in release.get("assets", [])}
     return tag, commit, assets
@@ -583,7 +586,18 @@ def update() -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--summary", type=Path, help="write a Markdown summary")
+    parser.add_argument(
+        "--read-cosign-version",
+        action="store_true",
+        help="print the pinned Cosign version without updating pins",
+    )
     args = parser.parse_args()
+    if args.read_cosign_version:
+        try:
+            print(env_version(TOOL_VERSIONS.read_text(encoding="utf-8"), "COSIGN_VERSION"))
+        except (OSError, ValueError, RuntimeError) as error:
+            parser.exit(1, f"Cannot read the pinned Cosign version: {error}\n")
+        return 0
     changes = update()
     lines = ["## Pinned tool maintenance", ""]
     if changes:
