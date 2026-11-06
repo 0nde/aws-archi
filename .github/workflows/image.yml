@@ -363,8 +363,18 @@ jobs:
         run: |
           ref="${IMAGE_DOCKERHUB}@${DIGEST}"
           cosign sign --yes "$ref"
-          cosign verify "$ref" --certificate-identity "$CERTIFICATE_IDENTITY" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null
+          # Docker Hub can expose an uploaded signature after a short delay.
+          for delay in 0 5 10 20 40 60; do
+            if [ "$delay" -gt 0 ]; then
+              sleep "$delay"
+            fi
+            if cosign verify "$ref" --certificate-identity "$CERTIFICATE_IDENTITY" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null; then
+              exit 0
+            fi
+          done
+          echo "Docker Hub signature verification did not succeed" >&2
+          exit 1
       - name: Apply verified Docker Hub tags
         env:
           DIGEST: ${{ needs.publish-manifest.outputs.digest }}
