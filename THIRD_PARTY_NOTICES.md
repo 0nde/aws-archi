@@ -6,12 +6,12 @@ The Apache-2.0 license in `LICENSE` applies only to the source authored for this
 
 | Component | Version source | License | Bundled notice |
 | --- | --- | --- | --- |
-| Terraform | `.devcontainer/Dockerfile` | BUSL-1.1 | `third_party_licenses/terraform-1.17.1/LICENSE` |
-| TFLint | `.devcontainer/Dockerfile` | MPL-2.0 and BUSL-1.1 | `third_party_licenses/tflint-0.65.0/` |
-| Terragrunt | `.devcontainer/Dockerfile` | MIT | `third_party_licenses/terragrunt-1.2.1/LICENSE.txt` |
-| terraform-docs | pinned source commit | MIT and dependency-specific terms | `third_party_licenses/terraform-docs-9d445519/LICENSE` |
-| GitHub CLI | `.devcontainer/Dockerfile` | MIT and dependency-specific terms | `third_party_licenses/github-cli-2.103.3/LICENSE` |
-| AWS CLI | `.devcontainer/Dockerfile` | Apache-2.0 and bundled third-party terms | `third_party_licenses/aws-cli-2.39.3/` |
+| Terraform | `.devcontainer/Dockerfile` | BUSL-1.1 | `third_party_licenses/terraform-1.17.2/LICENSE` |
+| TFLint | `.devcontainer/Dockerfile` | MPL-2.0 and BUSL-1.1 | `third_party_licenses/tflint-0.66.0/` |
+| Terragrunt | `.devcontainer/Dockerfile` | MIT | `third_party_licenses/terragrunt-1.2.2/LICENSE.txt` |
+| terraform-docs | pinned source commit | MIT and dependency-specific terms | `third_party_licenses/terraform-docs-d73141fa/LICENSE` |
+| GitHub CLI | `.devcontainer/Dockerfile` | MIT and dependency-specific terms | `third_party_licenses/github-cli-2.105.0/LICENSE` |
+| AWS CLI | `.devcontainer/Dockerfile` | Apache-2.0 and bundled third-party terms | `third_party_licenses/aws-cli-2.42.1/` |
 
 The container also preserves the license and notice files shipped with Python, pip, Node.js, npm, AWS CDK, cfn-lint, pylint, Oh My Zsh and its plugins. Dependency-level Go license reports for locally compiled tools are installed under `/usr/share/licenses/aws-archi/go-dependencies/`.
 
